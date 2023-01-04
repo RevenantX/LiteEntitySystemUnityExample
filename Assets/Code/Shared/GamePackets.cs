@@ -1,5 +1,4 @@
 using System;
-using LiteNetLib.Utils;
 using UnityEngine;
 
 namespace Code.Shared
@@ -33,21 +32,9 @@ namespace Code.Shared
         public Vector2 Hit;
     }
     
-    public struct PlayerInputPacket : INetSerializable
+    public struct PlayerInputPacket
     {
         public MovementKeys Keys;
         public float Rotation;
-
-        public void Serialize(NetDataWriter writer)
-        {
-            writer.Put((byte)Keys);
-            writer.Put(Rotation);
-        }
-
-        public void Deserialize(NetDataReader reader)
-        {
-            Keys = (MovementKeys)reader.GetByte();
-            Rotation = reader.GetFloat();
-        }
     }
 }

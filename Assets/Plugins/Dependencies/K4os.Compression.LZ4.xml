@@ -63,6 +63,14 @@
             Please note, it should be negative value.</param>
             <param name="length">Number of bytes to read.</param>
         </member>
+        <member name="M:K4os.Compression.LZ4.Encoders.ILZ4Decoder.Peek(System.Int32)">
+            <summary>
+            Peeks at previously decoded bytes. Please note, <paramref name="offset"/> should be
+            negative number, pointing to bytes before current head. 
+            </summary>
+            <param name="offset">Offset in source buffer relatively to current head.
+            Please note, it should be negative value.</param>
+        </member>
         <member name="T:K4os.Compression.LZ4.Encoders.ILZ4Encoder">
             <summary>
             Interface of LZ4 encoder used by LZ4 streams.
@@ -96,20 +104,20 @@
         </member>
         <member name="T:K4os.Compression.LZ4.Encoders.LZ4BlockDecoder">
             <summary>
-            LZ4 decoder used with independent blocks mode. Plase note, that it will fail
+            LZ4 decoder used with independent blocks mode. Please note, that it will fail
             if input data has been compressed with chained blocks
             (<see cref="T:K4os.Compression.LZ4.Encoders.LZ4FastChainEncoder"/> and <see cref="T:K4os.Compression.LZ4.Encoders.LZ4HighChainEncoder"/>)
             </summary>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Encoders.LZ4BlockDecoder.#ctor(System.Int32)">
+            <summary>Creates new instance of block decoder.</summary>
+            <param name="blockSize">Block size. Must be equal or greater to one used for compression.</param>
         </member>
         <member name="P:K4os.Compression.LZ4.Encoders.LZ4BlockDecoder.BlockSize">
             <inheritdoc />
         </member>
         <member name="P:K4os.Compression.LZ4.Encoders.LZ4BlockDecoder.BytesReady">
             <inheritdoc />
-        </member>
-        <member name="M:K4os.Compression.LZ4.Encoders.LZ4BlockDecoder.#ctor(System.Int32)">
-            <summary>Creates new instance of block decoder.</summary>
-            <param name="blockSize">Block size. Must be equal or greater to one used for compression.</param>
         </member>
         <member name="M:K4os.Compression.LZ4.Encoders.LZ4BlockDecoder.Decode(System.Byte*,System.Int32,System.Int32)">
             <inheritdoc />
@@ -118,6 +126,9 @@
             <inheritdoc />
         </member>
         <member name="M:K4os.Compression.LZ4.Encoders.LZ4BlockDecoder.Drain(System.Byte*,System.Int32,System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="M:K4os.Compression.LZ4.Encoders.LZ4BlockDecoder.Peek(System.Int32)">
             <inheritdoc />
         </member>
         <member name="M:K4os.Compression.LZ4.Encoders.LZ4BlockDecoder.ReleaseUnmanaged">
@@ -161,6 +172,9 @@
             <inheritdoc />
         </member>
         <member name="M:K4os.Compression.LZ4.Encoders.LZ4ChainDecoder.Drain(System.Byte*,System.Int32,System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="M:K4os.Compression.LZ4.Encoders.LZ4ChainDecoder.Peek(System.Int32)">
             <inheritdoc />
         </member>
         <member name="M:K4os.Compression.LZ4.Encoders.LZ4ChainDecoder.ReleaseUnmanaged">
@@ -519,6 +533,32 @@
             <param name="acceleration">Acceleration.</param>
             <returns>Number of bytes actually written to target.</returns>
         </member>
+        <member name="T:K4os.Compression.LZ4.Internal.BufferPool">
+            <summary>
+            Naive wrapper around ArrayPool. Makes calls if something should be pooled. 
+            </summary>
+        </member>
+        <member name="F:K4os.Compression.LZ4.Internal.BufferPool.MinPooledSize">
+            <summary>Minimum size of the buffer that can be pooled.</summary>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Internal.BufferPool.Alloc(System.Int32,System.Boolean)">
+            <summary>Allocate temporary buffer to store decompressed data.</summary>
+            <param name="size">Minimum size of the buffer.</param>
+            <param name="zero">Clear all data.</param>
+            <returns>Allocated buffer.</returns>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Internal.BufferPool.IsPooled(System.Byte[])">
+            <summary>
+            Determines if buffer was pooled or not.
+            The logic is quite simple: if buffer is smaller than 512 bytes are pooled.
+            </summary>
+            <param name="buffer">Buffer.</param>
+            <returns><c>true</c> if buffer was pooled; <c>false</c> otherwise</returns>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Internal.BufferPool.Free(System.Byte[])">
+            <summary>Releases allocated buffer. <see cref="M:K4os.Compression.LZ4.Internal.BufferPool.Alloc(System.Int32,System.Boolean)"/></summary>
+            <param name="buffer">Previously allocated buffer.</param>
+        </member>
         <member name="T:K4os.Compression.LZ4.Internal.Mem">
             <summary>Utility class with memory related functions.</summary>
         </member>
@@ -627,24 +667,10 @@
             <returns>Pointer to allocated block.</returns>
         </member>
         <member name="M:K4os.Compression.LZ4.Internal.Mem.Free(System.Void*)">
-            <summary>
-            Free memory allocated previously with <see cref="M:K4os.Compression.LZ4.Internal.Mem.Alloc(System.Int32)"/>.
-            </summary>
-            <param name="ptr"></param>
+            <summary>Free memory allocated previously with <see cref="M:K4os.Compression.LZ4.Internal.Mem.Alloc(System.Int32)"/>.</summary>
+            <param name="ptr">Pointer to allocated block.</param>
         </member>
-        <member name="M:K4os.Compression.LZ4.Internal.Mem.CloneAnyArray``1(``0[])">
-            <summary>Clones managed array to unmanaged one.
-            Allows quicker yet less safe unchecked access.</summary>
-            <param name="array">Input array.</param>
-            <returns>Cloned array.</returns>
-        </member>
-        <member name="M:K4os.Compression.LZ4.Internal.Mem.CloneArray(System.Int32[])">
-            <summary>Clones managed array to unmanaged one.
-            Allows quicker yet less safe unchecked access.</summary>
-            <param name="array">Input array.</param>
-            <returns>Cloned array.</returns>
-        </member>
-        <member name="M:K4os.Compression.LZ4.Internal.Mem.CloneArray(System.UInt32[])">
+        <member name="M:K4os.Compression.LZ4.Internal.Mem.CloneArray``1(``0[])">
             <summary>Clones managed array to unmanaged one.
             Allows quicker yet less safe unchecked access.</summary>
             <param name="array">Input array.</param>
@@ -709,6 +735,62 @@
             <summary>Copies exactly 8 bytes from source to target.</summary>
             <param name="target">Target address.</param>
             <param name="source">Source address.</param>
+        </member>
+        <member name="T:K4os.Compression.LZ4.Internal.PinnedMemory">
+            <summary>
+            Represents pinned memory.
+            It either points to unmanaged memory or block of memory from shared array pool.
+            When disposed, it handles it appropriately.
+            </summary>
+        </member>
+        <member name="P:K4os.Compression.LZ4.Internal.PinnedMemory.MaxPooledSize">
+            <summary>
+            Maximum size of the buffer that can be pooled from shared array pool.
+            </summary>
+        </member>
+        <member name="P:K4os.Compression.LZ4.Internal.PinnedMemory.Pointer">
+            <summary>Pointer to block of bytes.</summary>
+        </member>
+        <member name="P:K4os.Compression.LZ4.Internal.PinnedMemory.Span">
+            <summary>Pointer to block of bytes as span.</summary>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Internal.PinnedMemory.Reference``1">
+            <summary>Pointer to block of bytes.</summary>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Internal.PinnedMemory.Alloc(System.Int32,System.Boolean)">
+            <summary>
+            Allocates pinned block of memory, depending on the size it tries to use shared array pool.
+            </summary>
+            <param name="size">Size in bytes.</param>
+            <param name="zero">Indicates if block should be zeroed.</param>
+            <returns>Allocated <see cref="T:K4os.Compression.LZ4.Internal.PinnedMemory"/>.</returns>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Internal.PinnedMemory.Alloc(K4os.Compression.LZ4.Internal.PinnedMemory@,System.Int32,System.Boolean)">
+            <summary>
+            Allocates pinned block of memory, depending on the size it tries to use shared array pool.
+            </summary>
+            <param name="memory">Pinned memory pointer.</param>
+            <param name="size">Size in bytes.</param>
+            <param name="zero">Indicates if block should be zeroed.</param>
+            <returns>Allocated <see cref="T:K4os.Compression.LZ4.Internal.PinnedMemory"/>.</returns>
+            <exception cref="T:System.ArgumentOutOfRangeException"></exception>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Internal.PinnedMemory.Alloc``1(K4os.Compression.LZ4.Internal.PinnedMemory@,System.Boolean)">
+            <summary>
+            Allocates pinned block of memory for one item from shared array pool.
+            </summary>
+            <param name="memory">PinnedMemory pointer.</param>
+            <param name="zero">Indicates if block should be zeroed.</param>
+            <typeparam name="T">Type of item.</typeparam>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Internal.PinnedMemory.Clear">
+            <summary>Fill allocated block of memory with zeros.</summary>
+        </member>
+        <member name="M:K4os.Compression.LZ4.Internal.PinnedMemory.Free">
+            <summary>
+            Releases the memory.
+            </summary>
         </member>
         <member name="T:K4os.Compression.LZ4.Internal.UnmanagedResources">
             <summary>
@@ -1056,6 +1138,13 @@
             <param name="level">Compression level.</param>
             <returns>Output buffer.</returns>
         </member>
+        <member name="M:K4os.Compression.LZ4.LZ4Pickler.Pickle``1(System.ReadOnlySpan{System.Byte},``0,K4os.Compression.LZ4.LZ4Level)">
+            <summary>Compresses input buffer into self-contained package.</summary>
+            <param name="source">Input buffer.</param>
+            <param name="writer">Where the compressed data is written.</param>
+            <param name="level">Compression level.</param>
+            <returns>Output buffer.</returns>
+        </member>
         <member name="M:K4os.Compression.LZ4.LZ4Pickler.Pickle(System.ReadOnlySpan{System.Byte},System.Buffers.IBufferWriter{System.Byte},K4os.Compression.LZ4.LZ4Level)">
             <summary>Compresses input buffer into self-contained package.</summary>
             <param name="source">Input buffer.</param>
@@ -1085,6 +1174,11 @@
             <summary>Decompresses previously pickled buffer (see: <see cref="T:K4os.Compression.LZ4.LZ4Pickler"/>.</summary>
             <param name="source">Input buffer.</param>
             <returns>Output buffer.</returns>
+        </member>
+        <member name="M:K4os.Compression.LZ4.LZ4Pickler.Unpickle``1(System.ReadOnlySpan{System.Byte},``0)">
+            <summary>Decompresses previously pickled buffer (see: <see cref="T:K4os.Compression.LZ4.LZ4Pickler"/>.</summary>
+            <param name="source">Input buffer.</param>
+            <param name="writer">Where the decompressed data is written.</param>
         </member>
         <member name="M:K4os.Compression.LZ4.LZ4Pickler.Unpickle(System.ReadOnlySpan{System.Byte},System.Buffers.IBufferWriter{System.Byte})">
             <summary>Decompresses previously pickled buffer (see: <see cref="T:K4os.Compression.LZ4.LZ4Pickler"/>.</summary>

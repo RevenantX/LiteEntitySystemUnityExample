@@ -16,7 +16,7 @@ namespace Code.Shared
         [SyncVarFlags(SyncFlags.Interpolated | SyncFlags.LagCompensated)] 
         private SyncVar<FloatAngle> _rotation;
         
-        [SyncVarFlags(SyncFlags.AlwaysPredict)] 
+        [SyncVarFlags(SyncFlags.AlwaysRollback)] 
         private SyncVar<byte> _health;
         
         private SyncVar<float> _speed = 3f;

@@ -18,7 +18,7 @@ namespace Code.Shared
         
         public UnityPhysicsManager(EntityParams entityParams) : base(entityParams)
         {
-            Physics.autoSimulation = false;
+            Physics.simulationMode = SimulationMode.Script;
         }
 
         public override void Update()

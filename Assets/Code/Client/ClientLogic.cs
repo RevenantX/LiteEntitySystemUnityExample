@@ -77,8 +77,8 @@ namespace Code.Client
             _userName = Environment.MachineName + " " + Random.Range(0, 100000);
             _writer = new NetDataWriter();
 
-            _shootsPool = new GamePool<ShootEffect>(ShootEffectContructor, 100);
-            _hitsPool = new GamePool<HitEffect>(HitEffectContructor, 100);
+            _shootsPool = new GamePool<ShootEffect>(ShootEffectContructor, 200);
+            _hitsPool = new GamePool<HitEffect>(HitEffectContructor, 200);
             _packetProcessor = new NetPacketProcessor();
             _netManager = new NetManager(this)
             {

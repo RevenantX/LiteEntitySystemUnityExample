@@ -64,13 +64,13 @@ namespace Code.Shared
             UnityObject.AddComponent<BasePlayerView>().AttachedPlayer = this;
         }
 
-        public override void OnLagCompensationStart()
+        protected override void OnLagCompensationStart()
         {
-            if(_rigidbody != null)
+            if (_rigidbody != null)
                 _rigidbody.position = _position;
         }
         
-        public override void OnLagCompensationEnd()
+        protected override void OnLagCompensationEnd()
         {
             if(_rigidbody != null)
                 _rigidbody.position = _position;

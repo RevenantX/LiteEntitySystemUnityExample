@@ -1,10 +1,13 @@
-﻿using System.Net;
+﻿using System;
+using System.Net;
 using System.Net.Sockets;
 using LiteEntitySystem;
 using Code.Shared;
+using LiteEntitySystem.Transport;
 using LiteNetLib;
 using LiteNetLib.Utils;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace Code.Server
 {
@@ -25,7 +28,7 @@ namespace Code.Server
             EntityManager.RegisterFieldType<Vector2>(Vector2.Lerp);
             _netManager = new NetManager(this)
             {
-                AutoRecycle = false,
+                AutoRecycle = true,
                 PacketPoolSize = 1000,
                 SimulateLatency = true,
                 SimulationMinLatency = 50,
@@ -89,7 +92,7 @@ namespace Code.Server
         {
             Debug.Log("[S] Join packet received: " + joinPacket.UserName);
             
-            var serverPlayer = _serverEntityManager.AddPlayer(peer, true);
+            var serverPlayer = _serverEntityManager.AddPlayer(new LiteNetLibNetPeer(peer, true));
             
             var player = _serverEntityManager.AddEntity<BasePlayer>(e =>
             {
@@ -110,7 +113,7 @@ namespace Code.Server
 
             if (peer.Tag != null)
             {
-                _serverEntityManager.RemovePlayer((NetPlayer) peer.Tag);
+                _serverEntityManager.RemovePlayer((LiteNetLibNetPeer)peer.Tag);
             }
         }
 
@@ -121,21 +124,20 @@ namespace Code.Server
 
         void INetEventListener.OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
         {
-            byte packetType = reader.GetByte();
+            byte packetType = reader.PeekByte();
             switch ((PacketType)packetType)
             {
                 case PacketType.EntitySystem:
-                    _serverEntityManager.Deserialize(peer, reader);
+                    _serverEntityManager.Deserialize((LiteNetLibNetPeer)peer.Tag, reader.AsReadOnlySpan());
                     break;
                 
                 case PacketType.Serialized:
+                    reader.GetByte();
                     _packetProcessor.ReadAllPackets(reader, peer);
-                    reader.Recycle();
                     break;
                 
                 default:
                     Debug.Log("Unhandled packet: " + packetType);
-                    reader.Recycle();
                     break;
             }
         }

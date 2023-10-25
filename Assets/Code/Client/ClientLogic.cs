@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using LiteEntitySystem;
 using Code.Shared;
+using LiteEntitySystem.Transport;
 using LiteNetLib;
 using LiteNetLib.Utils;
 using UnityEngine;
@@ -82,7 +83,7 @@ namespace Code.Client
             _packetProcessor = new NetPacketProcessor();
             _netManager = new NetManager(this)
             {
-                AutoRecycle = false,
+                AutoRecycle = true,
                 EnableStatistics = true,
                 IPv6Mode = IPv6Mode.Disabled,
                 SimulateLatency = true,
@@ -168,7 +169,12 @@ OUT: {BytesOutPerSecond/1000f} KB/s({PacketsOutPerSecond})";
                 .Register(GameEntities.Physics, e => new UnityPhysicsManager(e).Init(transform))
                 .Register(GameEntities.Projectile, e => new SimpleProjectile(e));
 
-            _entityManager = new ClientEntityManager(typesMap, new InputProcessor<PlayerInputPacket>(), peer, (byte)PacketType.EntitySystem, NetworkGeneral.GameFPS);
+            _entityManager = new ClientEntityManager(
+                typesMap, 
+                new InputProcessor<PlayerInputPacket>(), 
+                new LiteNetLibNetPeer(peer, true), 
+                (byte)PacketType.EntitySystem, 
+                NetworkGeneral.GameFPS);
             _entityManager.GetEntities<BasePlayer>().SubscribeToConstructed(player =>
             {
                 if (player.IsLocalControlled)
@@ -203,27 +209,21 @@ OUT: {BytesOutPerSecond/1000f} KB/s({PacketsOutPerSecond})";
 
         void INetEventListener.OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
         {
-            byte packetType = reader.GetByte();
-            if (packetType >= NetworkGeneral.PacketTypesCount)
-            {
-                reader.Recycle();
-                return;
-            }
+            byte packetType = reader.PeekByte();
             var pt = (PacketType) packetType;
             switch (pt)
             {
                 case PacketType.EntitySystem:
-                    _entityManager.Deserialize(reader);
+                    _entityManager.Deserialize(reader.AsReadOnlySpan());
                     break;
                 
                 case PacketType.Serialized:
+                    reader.GetByte();
                     _packetProcessor.ReadAllPackets(reader);
-                    reader.Recycle();
                     break;
      
                 default:
                     Debug.Log("Unhandled packet: " + pt);
-                    reader.Recycle();
                     break;
             }
         }

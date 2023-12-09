@@ -180,12 +180,13 @@ namespace LiteEntitySystem
                 Utils.ResizeOrCreate(ref _interpolatedInitialData[entity.Id], classData.InterpolatedFieldsSize);
             }
 
-            fixed (byte* interpDataPtr = _interpolatedInitialData[entity.Id])
+            fixed (byte* interpDataPtr = _interpolatedInitialData[entity.Id], prevDataPtr = _interpolatePrevData[entity.Id])
             {
                 for (int i = 0; i < classData.InterpolatedCount; i++)
                 {
                     var field = classData.Fields[i];
                     field.TypeProcessor.WriteTo(entity, field.Offset, interpDataPtr + field.FixedOffset);
+                    field.TypeProcessor.WriteTo(entity, field.Offset, prevDataPtr + field.FixedOffset);
                 }
             }
         }
@@ -578,6 +579,17 @@ namespace LiteEntitySystem
             
             //logic update
             ushort prevTick = _tick;
+            
+            float rtt = _netPeer.RoundTripTimeMs;
+            float totalInputTime = _inputCommands.Count * DeltaTimeF * 1000f;
+            if (totalInputTime > rtt + DeltaTimeF * 5000f)
+            {
+                SlowDownEnabled = true;
+            }
+            else if (totalInputTime < rtt + DeltaTimeF * 3000f)
+            {
+                SlowDownEnabled = false;
+            }
             base.Update();
 
             if (PreloadNextState())

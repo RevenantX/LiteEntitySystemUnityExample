@@ -21,7 +21,7 @@ namespace Code.Shared
             Physics.simulationMode = SimulationMode.Script;
         }
 
-        public override void Update()
+        protected override void Update()
         {
             PhysicsScene.Simulate(EntityManager.DeltaTimeF);
         }

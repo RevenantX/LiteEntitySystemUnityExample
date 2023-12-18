@@ -13,7 +13,7 @@ namespace Code.Shared
             _mainCamera = Camera.main;
         }
 
-        public override void VisualUpdate()
+        protected override void VisualUpdate()
         {
             //input
             Vector2 velocity = new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"));
@@ -38,7 +38,7 @@ namespace Code.Shared
             _nextCommand.Rotation = rotation;
         }
 
-        public override void ReadInput(in PlayerInputPacket input)
+        protected override void ReadInput(in PlayerInputPacket input)
         {
             var velocity = Vector2.zero;
 
@@ -59,7 +59,7 @@ namespace Code.Shared
                 velocity);
         }
 
-        public override void GenerateInput(out PlayerInputPacket input)
+        protected override void GenerateInput(out PlayerInputPacket input)
         {
             input = _nextCommand;
             _nextCommand.Keys = 0;

@@ -24,6 +24,16 @@ namespace LiteEntitySystem
         public ushort RollBackTick { get; private set; }
 
         /// <summary>
+        /// Tick of currently executing rpc (check only in client RPC methods)
+        /// </summary>
+        public ushort CurrentRPCTick { get; internal set; }
+
+        /// <summary>
+        /// Is rpc currently executing
+        /// </summary>
+        public bool IsExecutingRPC { get; internal set; }
+
+        /// <summary>
         /// Current state server tick
         /// </summary>
         public ushort RawServerTick => _stateA?.Tick ?? 0;
@@ -328,6 +338,7 @@ namespace LiteEntitySystem
                             _timer = _lerpTime;
                             //fast-forward
                             GoToNextState();
+                            PreloadNextState();
                         }
 
                         _readyStates.Add(serverState, serverState.Tick);
@@ -495,9 +506,6 @@ namespace LiteEntitySystem
                     break;
                 }
             }
-            
-            //load next state
-            PreloadNextState();
         }
 
         protected override unsafe void OnLogicTick()
@@ -595,9 +603,11 @@ namespace LiteEntitySystem
             if (PreloadNextState())
             {
                 _timer += VisualDeltaTime;
-                if (_timer >= _lerpTime)
+                while(_timer >= _lerpTime)
                 {
                     GoToNextState();
+                    if (!PreloadNextState())
+                        break;
                 }
             }
 
@@ -782,8 +792,7 @@ namespace LiteEntitySystem
                 {
                     //this can be only on logics (not on singletons)
                     Logger.Log($"[CEM] Replace entity by new: {version}");
-                    if(!entity.IsDestroyed)
-                        entity.DestroyInternal();
+                    entity.DestroyInternal();
                     entity = null;
                 }
                 if(entity == null)

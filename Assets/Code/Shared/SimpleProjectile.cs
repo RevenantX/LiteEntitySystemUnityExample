@@ -66,7 +66,7 @@ namespace Code.Shared
             ShooterPlayerId = playerId;
         }
 
-        public override void Update()
+        protected override void Update()
         {
             _prevPos = Position.Value;
             if (IsLocal || EntityManager.IsServer)
@@ -81,7 +81,7 @@ namespace Code.Shared
             //_rigidbody.position = Position;
         }
 
-        public override void VisualUpdate()
+        protected override void VisualUpdate()
         {
             var visualPos = Vector2.Lerp(_prevPos, Position, EntityManager.LerpFactor);
             if (_spawnLerp > 0f)

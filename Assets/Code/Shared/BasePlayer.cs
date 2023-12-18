@@ -127,7 +127,7 @@ namespace Code.Shared
             _projectileFire = isProjectileFiring;
         }
 
-        public override void Update()
+        protected override void Update()
         {
             base.Update();
             _rotation.Value = _targetRotation;

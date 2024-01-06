@@ -7,7 +7,6 @@ namespace LiteEntitySystem.Internal
     {
         public ushort EntityId;
         public int EntityFieldsOffset;
-        public ushort TotalSize;
         public int DataOffset;
         public int InterpolatedCachesCount;
         public InterpolatedCache[] InterpolatedCaches;
@@ -22,25 +21,31 @@ namespace LiteEntitySystem.Internal
         public readonly MethodCallDelegate Delegate;
         public bool Executed;
 
-        public RemoteCallsCache(RPCHeader header, EntitySharedReference entityId, MethodCallDelegate callDelegate, int offset, int syncableOffset)
+        public RemoteCallsCache(RPCHeader header, EntitySharedReference entityId, RpcFieldInfo rpcFieldInfo, int offset)
         {
             Header = header;
             EntityId = entityId;
-            Delegate = callDelegate;
+            Delegate = rpcFieldInfo.Method;
             Offset = offset;
-            SyncableOffset = syncableOffset;
+            SyncableOffset = rpcFieldInfo.SyncableOffset;
             Executed = false;
+            if (Delegate == null)
+                Logger.LogError($"ZeroRPC: {header.Id}");
         }
     }
 
     internal readonly struct InterpolatedCache
     {
-        public readonly int Field;
+        public readonly int FieldOffset;
+        public readonly int FieldFixedOffset;
+        public readonly ValueTypeProcessor TypeProcessor;
         public readonly int StateReaderOffset;
 
-        public InterpolatedCache(int fieldId, int offset)
+        public InterpolatedCache(ref EntityFieldInfo field, int offset)
         {
-            Field = fieldId;
+            FieldOffset = field.Offset;
+            FieldFixedOffset = field.FixedOffset;
+            TypeProcessor = field.TypeProcessor;
             StateReaderOffset = offset;
         }
     }
@@ -54,8 +59,8 @@ namespace LiteEntitySystem.Internal
         public ushort LastReceivedTick;
         public StatePreloadData[] PreloadDataArray = new StatePreloadData[32];
         public int PreloadDataCount;
-        public int[] InterpolatedFields = new int[8];
-        public int InterpolatedCount;
+        public int[] InterpolatedEntities = new int[8];
+        public int InterpolatedEntityCount;
         public int TotalPartsCount;
 
         private int _syncableRemoteCallsCount;
@@ -80,10 +85,10 @@ namespace LiteEntitySystem.Internal
                 ushort fullSyncAndTotalSize = BitConverter.ToUInt16(Data, bytesRead);
 
                 bool fullSync = (fullSyncAndTotalSize & 1) == 1;
-                preloadData.TotalSize = (ushort)(fullSyncAndTotalSize >> 1);
+                int totalSize = fullSyncAndTotalSize >> 1;
                 preloadData.EntityId = BitConverter.ToUInt16(Data, bytesRead + sizeof(ushort));
                 preloadData.InterpolatedCachesCount = 0;
-                bytesRead += preloadData.TotalSize;
+                bytesRead += totalSize;
                 
                 if (preloadData.EntityId > EntityManager.MaxSyncedEntityCount)
                 {
@@ -109,30 +114,25 @@ namespace LiteEntitySystem.Internal
                     continue;
                 }
 
-                preloadData.EntityFieldsOffset = initialReaderPosition + StateSerializer.DiffHeaderSize;
-                preloadData.DataOffset =
-                    initialReaderPosition +
-                    StateSerializer.DiffHeaderSize +
-                    entity.GetClassData().FieldsFlagsSize;
-                
                 ref var classData = ref entity.GetClassData();
-                var fields = classData.Fields;
+                preloadData.EntityFieldsOffset = initialReaderPosition + StateSerializer.DiffHeaderSize;
+                preloadData.DataOffset = preloadData.EntityFieldsOffset + classData.FieldsFlagsSize;
                 int stateReaderOffset = preloadData.DataOffset;
 
                 //preload interpolation info
                 if (entity.IsRemoteControlled && classData.InterpolatedCount > 0)
                 {
-                    Utils.ResizeIfFull(ref InterpolatedFields, InterpolatedCount);
+                    Utils.ResizeIfFull(ref InterpolatedEntities, InterpolatedEntityCount);
                     Utils.ResizeOrCreate(ref preloadData.InterpolatedCaches, classData.InterpolatedCount);
-                    InterpolatedFields[InterpolatedCount++] = PreloadDataCount - 1;
+                    InterpolatedEntities[InterpolatedEntityCount++] = PreloadDataCount - 1;
                 }
                 for (int i = 0; i < classData.FieldsCount; i++)
                 {
                     if (!Utils.IsBitSet(Data, preloadData.EntityFieldsOffset, i))
                         continue;
-                    var field = fields[i];
+                    ref var field = ref classData.Fields[i];
                     if (entity.IsRemoteControlled && field.Flags.HasFlagFast(SyncFlags.Interpolated))
-                        preloadData.InterpolatedCaches[preloadData.InterpolatedCachesCount++] = new InterpolatedCache(i, stateReaderOffset);
+                        preloadData.InterpolatedCaches[preloadData.InterpolatedCachesCount++] = new InterpolatedCache(ref field, stateReaderOffset);
                     stateReaderOffset += field.IntSize;
                 }
 
@@ -140,10 +140,8 @@ namespace LiteEntitySystem.Internal
                 fixed(byte* rawData = Data)
                     ReadRPCs(rawData, ref stateReaderOffset, new EntitySharedReference(entity.Id, entity.Version), classData);
 
-                if (stateReaderOffset != initialReaderPosition + preloadData.TotalSize)
-                {
-                    Logger.LogError($"Missread! {stateReaderOffset} > {initialReaderPosition + preloadData.TotalSize}");
-                }
+                if (stateReaderOffset != initialReaderPosition + totalSize)
+                    Logger.LogError($"Missread! {stateReaderOffset} > {initialReaderPosition + totalSize}");
             }
         }
         
@@ -223,15 +221,11 @@ namespace LiteEntitySystem.Internal
             {
                 var header = *(RPCHeader*)(rawData + position);
                 position += sizeof(RPCHeader);
-                var rpcCache = new RemoteCallsCache(header, entityId, classData.RemoteCallsClient[header.Id], position, classData.RpcOffsets[header.Id].SyncableOffset);
+                var rpcCache = new RemoteCallsCache(header, entityId, classData.RemoteCallsClient[header.Id], position);
                 //Logger.Log($"[CEM] ReadRPC. RpcId: {header.Id}, Tick: {header.Tick}, TypeSize: {header.TypeSize}, Count: {header.Count}");
-                if (rpcCache.Delegate == null)
-                {
-                    Logger.LogError($"ZeroRPC: {header.Id}");
-                }
 
                 //this is entity rpc
-                if (classData.RpcOffsets[header.Id].SyncableOffset == -1)
+                if (rpcCache.SyncableOffset == -1)
                 {
                     _remoteCallsCaches[_remoteCallsCount] = rpcCache;
                     _remoteCallsCount++;
@@ -250,7 +244,7 @@ namespace LiteEntitySystem.Internal
         {
             Tick = tick;
             Array.Clear(_receivedParts, 0, _maxReceivedPart+1);
-            InterpolatedCount = 0;
+            InterpolatedEntityCount = 0;
             PreloadDataCount = 0;
             _maxReceivedPart = 0;
             _receivedPartsCount = 0;

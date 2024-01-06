@@ -22,8 +22,8 @@ namespace Code.Shared
         private SyncVar<float> _speed = 3f;
         public readonly SyncString Name = new ();
         private readonly SyncTimer _shootTimer = new (0.5f);
-        private RemoteCall<ShootPacket> _shootRemoteCall;
-        private RemoteCall<HitPacket> _hitRemoteCall;
+        private static RemoteCall<ShootPacket> _shootRemoteCall;
+        private static RemoteCall<HitPacket> _hitRemoteCall;
         
         private Vector2 _velocity;
         private Rigidbody2D _rigidbody;
@@ -44,9 +44,9 @@ namespace Code.Shared
 
         }
 
-        protected override void RegisterRPC(in RPCRegistrator r)
+        protected override void RegisterRPC(ref RPCRegistrator r)
         {
-            base.RegisterRPC(in r);
+            base.RegisterRPC(ref r);
             r.CreateRPCAction(this, OnShoot, ref _shootRemoteCall, ExecuteFlags.ExecuteOnPrediction | ExecuteFlags.SendToOther);
             r.CreateRPCAction(this, OnHit, ref _hitRemoteCall, ExecuteFlags.ExecuteOnPrediction | ExecuteFlags.SendToOther);
         }

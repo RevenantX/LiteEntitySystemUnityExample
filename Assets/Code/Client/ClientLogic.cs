@@ -169,9 +169,8 @@ OUT: {BytesOutPerSecond/1000f} KB/s({PacketsOutPerSecond})";
                 .Register(GameEntities.Physics, e => new UnityPhysicsManager(e).Init(transform))
                 .Register(GameEntities.Projectile, e => new SimpleProjectile(e));
 
-            _entityManager = new ClientEntityManager(
+            _entityManager = ClientEntityManager.Create<PlayerInputPacket>(
                 typesMap, 
-                new InputProcessor<PlayerInputPacket>(), 
                 new LiteNetLibNetPeer(peer, true), 
                 (byte)PacketType.EntitySystem, 
                 NetworkGeneral.GameFPS);

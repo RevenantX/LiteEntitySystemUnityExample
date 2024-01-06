@@ -53,9 +53,8 @@ namespace Code.Server
                 .Register(GameEntities.Physics, e => new UnityPhysicsManager(e).Init(transform))
                 .Register(GameEntities.Projectile, e => new SimpleProjectile(e));
             
-            _serverEntityManager = new ServerEntityManager(
+            _serverEntityManager = ServerEntityManager.Create<PlayerInputPacket>(
                 typesMap,
-                new InputProcessor<PlayerInputPacket>(),
                 (byte)PacketType.EntitySystem, 
                 NetworkGeneral.GameFPS, 
                 ServerSendRate.HalfOfFPS);
@@ -93,13 +92,12 @@ namespace Code.Server
             Debug.Log("[S] Join packet received: " + joinPacket.UserName);
             
             var serverPlayer = _serverEntityManager.AddPlayer(new LiteNetLibNetPeer(peer, true));
-            
             var player = _serverEntityManager.AddEntity<BasePlayer>(e =>
             {
                 e.Spawn(new Vector2(Random.Range(-2f, 2f), Random.Range(-2f, 2f)));
                 e.Name.Value = joinPacket.UserName;
             });
-            _serverEntityManager.AddController<BasePlayerController>(serverPlayer, e => e.StartControl(player));
+            _serverEntityManager.AddController<BasePlayerController>(serverPlayer, player);
         }
 
         void INetEventListener.OnPeerConnected(NetPeer peer)

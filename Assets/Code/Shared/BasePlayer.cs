@@ -168,8 +168,13 @@ namespace Code.Shared
                 else if(EntityManager.InNormalState)
                 {
                     //shoot projectile
-                    Vector2 dir = new Vector2(Mathf.Cos(_rotation.Value * Mathf.Deg2Rad), Mathf.Sin(_rotation.Value * Mathf.Deg2Rad));
-                    AddPredictedEntity<SimpleProjectile>(e => e.Init(OwnerId, _position, dir * 10f));
+                    var initParams = new ProjectileInitParams
+                    {
+                        OwnerId = OwnerId,
+                        Position = _position,
+                        Speed = new Vector2(Mathf.Cos(_rotation.Value * Mathf.Deg2Rad), Mathf.Sin(_rotation.Value * Mathf.Deg2Rad)) * 10f
+                    };
+                    AddPredictedEntity<SimpleProjectile>(initParams.Init);
                 }
             }
         }

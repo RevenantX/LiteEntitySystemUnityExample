@@ -4,6 +4,14 @@ using UnityEngine;
 
 namespace Code.Shared
 {
+    public struct ProjectileInitParams
+    {
+        public byte OwnerId;
+        public Vector2 Position;
+        public Vector2 Speed;
+        public void Init(SimpleProjectile e) => e.Init(OwnerId, Position, Speed);
+    }
+    
     [UpdateableEntity(true)]
     public class SimpleProjectile : EntityLogic
     {

@@ -107,6 +107,94 @@ namespace LiteNetLib.Utils
         }
 
         #region GetMethods
+
+        public void Get<T>(out T result) where T : struct, INetSerializable
+        {
+            result = default(T);
+            result.Deserialize(this);
+        }
+
+        public void Get<T>(out T result, Func<T> constructor) where T : class, INetSerializable
+        {
+            result = constructor();
+            result.Deserialize(this);
+        }
+
+        public void Get(out IPEndPoint result)
+        {
+            result = GetNetEndPoint();
+        }
+
+        public void Get(out byte result)
+        {
+            result = GetByte();
+        }
+
+        public void Get(out sbyte result)
+        {
+            result = (sbyte)GetByte();
+        }
+
+        public void Get(out bool result)
+        {
+            result = GetBool();
+        }
+
+        public void Get(out char result)
+        {
+            result = GetChar();
+        }
+
+        public void Get(out ushort result)
+        {
+            result = GetUShort();
+        }
+
+        public void Get(out short result)
+        {
+            result = GetShort();
+        }
+
+        public void Get(out ulong result)
+        {
+            result = GetULong();
+        }
+
+        public void Get(out long result)
+        {
+            result = GetLong();
+        }
+
+        public void Get(out uint result)
+        {
+            result = GetUInt();
+        }
+
+        public void Get(out int result)
+        {
+            result = GetInt();
+        }
+
+        public void Get(out double result)
+        {
+            result = GetDouble();
+        }
+
+        public void Get(out float result)
+        {
+            result = GetFloat();
+        }
+
+        public void Get(out string result)
+        {
+            result = GetString();
+        }
+
+        public void Get(out string result, int maxLength)
+        {
+            result = GetString(maxLength);
+        }
+
         public IPEndPoint GetNetEndPoint()
         {
             string host = GetString(1000);
@@ -283,7 +371,7 @@ namespace LiteNetLib.Utils
             ushort size = GetUShort();
             if (size == 0)
             {
-                return null;
+                return string.Empty;
             }
 
             int actualSize = size - 1;
@@ -294,9 +382,9 @@ namespace LiteNetLib.Utils
 
             ArraySegment<byte> data = GetBytesSegment(actualSize);
 
-            return (maxLength > 0 && NetDataWriter.uTF8Encoding.GetCharCount(data.Array, data.Offset, data.Count) > maxLength) ?
+            return (maxLength > 0 && NetDataWriter.uTF8Encoding.Value.GetCharCount(data.Array, data.Offset, data.Count) > maxLength) ?
                 string.Empty :
-                NetDataWriter.uTF8Encoding.GetString(data.Array, data.Offset, data.Count);
+                NetDataWriter.uTF8Encoding.Value.GetString(data.Array, data.Offset, data.Count);
         }
 
         public string GetString()
@@ -304,7 +392,7 @@ namespace LiteNetLib.Utils
             ushort size = GetUShort();
             if (size == 0)
             {
-                return null;
+                return string.Empty;
             }
 
             int actualSize = size - 1;
@@ -315,7 +403,7 @@ namespace LiteNetLib.Utils
 
             ArraySegment<byte> data = GetBytesSegment(actualSize);
 
-            return NetDataWriter.uTF8Encoding.GetString(data.Array, data.Offset, data.Count);
+            return NetDataWriter.uTF8Encoding.Value.GetString(data.Array, data.Offset, data.Count);
         }
 
         public ArraySegment<byte> GetBytesSegment(int count)
@@ -332,12 +420,27 @@ namespace LiteNetLib.Utils
             return segment;
         }
 
-        public T Get<T>() where T : INetSerializable, new()
+        public T Get<T>() where T : struct, INetSerializable
         {
-            var obj = new T();
+            var obj = default(T);
             obj.Deserialize(this);
             return obj;
         }
+
+        public T Get<T>(Func<T> constructor) where T : class, INetSerializable
+        {
+            var obj = constructor();
+            obj.Deserialize(this);
+            return obj;
+        }
+
+#if LITENETLIB_SPANS || NETCOREAPP2_1_OR_GREATER || NETSTANDARD2_1_OR_GREATER || NETCOREAPP2_1 || NETCOREAPP3_1 || NET5_0 || NETSTANDARD2_1
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ReadOnlySpan<byte> GetRemainingBytesSpan()
+        {
+            return new ReadOnlySpan<byte>(_data, _position, _dataSize - _position);
+        }
+#endif
 
         public byte[] GetRemainingBytes()
         {
@@ -440,7 +543,7 @@ namespace LiteNetLib.Utils
             ushort size = PeekUShort();
             if (size == 0)
             {
-                return null;
+                return string.Empty;
             }
 
             int actualSize = size - 1;
@@ -449,9 +552,9 @@ namespace LiteNetLib.Utils
                 return null;
             }
 
-            return (maxLength > 0 && NetDataWriter.uTF8Encoding.GetCharCount(_data, _position + 2, actualSize) > maxLength) ?
+            return (maxLength > 0 && NetDataWriter.uTF8Encoding.Value.GetCharCount(_data, _position + 2, actualSize) > maxLength) ?
                 string.Empty :
-                NetDataWriter.uTF8Encoding.GetString(_data, _position + 2, actualSize);
+                NetDataWriter.uTF8Encoding.Value.GetString(_data, _position + 2, actualSize);
         }
 
         public string PeekString()
@@ -459,7 +562,7 @@ namespace LiteNetLib.Utils
             ushort size = PeekUShort();
             if (size == 0)
             {
-                return null;
+                return string.Empty;
             }
 
             int actualSize = size - 1;
@@ -468,7 +571,7 @@ namespace LiteNetLib.Utils
                 return null;
             }
 
-            return NetDataWriter.uTF8Encoding.GetString(_data, _position + 2, actualSize);
+            return NetDataWriter.uTF8Encoding.Value.GetString(_data, _position + 2, actualSize);
         }
         #endregion
 

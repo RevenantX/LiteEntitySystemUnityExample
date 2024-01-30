@@ -225,18 +225,17 @@ namespace LiteEntitySystem
             //preregister some types
             _registeredTypeIds.Add(typeof(ControllerLogic), filterCount++);
             
-            foreach (var kv in typesMap.RegisteredTypes)
+            foreach (var (entType, typeInfo) in typesMap.RegisteredTypes)
             {
-                var entType = kv.Key;
-
-                ClassDataDict[kv.Value.ClassId] = new EntityClassData(
+                var classData = new EntityClassData(
                     entType.IsSubclassOf(typeof(SingletonEntityLogic)) ? singletonCount++ : filterCount++, 
                     entType, 
-                    kv.Value);
-                _registeredTypeIds.Add(entType, ClassDataDict[kv.Value.ClassId].FilterId);
+                    typeInfo);
+                _registeredTypeIds.Add(entType, classData.FilterId);
+                ClassDataDict[typeInfo.ClassId] = classData;
                 //Logger.Log($"Register: {entType.Name} ClassId: {classId}");
             }
-
+            
             foreach (var registeredType in typesMap.RegisteredTypes.Values)
             {
                 //map base ids

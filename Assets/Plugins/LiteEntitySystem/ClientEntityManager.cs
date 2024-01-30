@@ -74,6 +74,9 @@ namespace LiteEntitySystem
         /// </summary>
         public int LerpBufferCount => _readyStates.Count;
 
+        /// <summary>
+        /// Client network peer
+        /// </summary>
         public AbstractNetPeer NetPeer => _netPeer;
         
         private const int InputBufferSize = 128;

@@ -102,7 +102,7 @@ namespace Code.Server
 
         void INetEventListener.OnPeerConnected(NetPeer peer)
         {
-            Debug.Log("[S] Player connected: " + peer.EndPoint);
+            Debug.Log("[S] Player connected: " + peer);
         }
 
         void INetEventListener.OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)

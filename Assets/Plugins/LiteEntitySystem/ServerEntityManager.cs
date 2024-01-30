@@ -198,12 +198,11 @@ namespace LiteEntitySystem
         /// <returns>Created entity or null in case of limit</returns>
         public T AddController<T>(NetPlayer owner, Action<T> initMethod = null) where T : ControllerLogic
         {
-            var result = Add<T>(ent =>
+            return Add<T>(ent =>
             {
                 ent.InternalOwnerId = owner.Id;
                 initMethod?.Invoke(ent);
             });
-            return result;
         }
         
         /// <summary>
@@ -216,13 +215,12 @@ namespace LiteEntitySystem
         /// <returns>Created entity or null in case of limit</returns>
         public T AddController<T>(NetPlayer owner, PawnLogic entityToControl, Action<T> initMethod = null) where T : ControllerLogic
         {
-            var result = Add<T>(ent =>
+            return Add<T>(ent =>
             {
                 ent.InternalOwnerId = owner.Id;
                 ent.StartControl(entityToControl);
                 initMethod?.Invoke(ent);
             });
-            return result;
         }
         
         /// <summary>

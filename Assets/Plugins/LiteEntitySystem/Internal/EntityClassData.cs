@@ -81,7 +81,7 @@ namespace LiteEntitySystem.Internal
             return baseTypes;
         }
 
-        private static bool IsRemoteCallType(Type ft)
+        public static bool IsRemoteCallType(Type ft)
         {
             if (ft == typeof(RemoteCall))
                 return true;
@@ -145,12 +145,11 @@ namespace LiteEntitySystem.Internal
                 foreach (var field in baseType.GetFields(bindingFlags))
                 {
                     var ft = field.FieldType;
-                    if(IsRemoteCallType(ft) || field.IsStatic)
-                    {
-                        if (!field.IsStatic)
-                            throw new Exception($"RemoteCalls should be static! (Class: {entType} Field: {field.Name})");
+                    if(IsRemoteCallType(ft) && !field.IsStatic)
+                        throw new Exception($"RemoteCalls should be static! (Class: {entType} Field: {field.Name})");
+                    
+                    if(field.IsStatic)
                         continue;
-                    }
                     
                     var syncVarFieldAttribute = field.GetCustomAttribute<SyncVarFlags>();
                     var syncVarClassAttribute = baseType.GetCustomAttribute<SyncVarFlags>();
@@ -160,18 +159,9 @@ namespace LiteEntitySystem.Internal
                     int offset = Utils.GetFieldOffset(field);
                     
                     //syncvars
-                    if (ft.IsValueType && ft.IsGenericType && !ft.IsArray)
+                    if (ft.IsGenericType && !ft.IsArray && ft.GetGenericTypeDefinition() == typeof(SyncVar<>))
                     {
-                        FieldType internalFieldType;
-                        var genericType = ft.GetGenericTypeDefinition();
-                        
-                        if (genericType == typeof(SyncVar<>))
-                            internalFieldType = FieldType.SyncVar;
-                        else
-                            continue;
-                        
                         ft = ft.GetGenericArguments()[0];
-                        
                         if (ft.IsEnum)
                             ft = ft.GetEnumUnderlyingType();
 
@@ -186,7 +176,7 @@ namespace LiteEntitySystem.Internal
                             InterpolatedFieldsSize += fieldSize;
                             InterpolatedCount++;
                         }
-                        var fieldInfo = new EntityFieldInfo($"{baseType.Name}-{field.Name}", valueTypeProcessor, offset, internalFieldType, syncFlags);
+                        var fieldInfo = new EntityFieldInfo($"{baseType.Name}-{field.Name}", valueTypeProcessor, offset, syncFlags);
                         if (syncFlags.HasFlagFast(SyncFlags.LagCompensated))
                         {
                             lagCompensatedFields.Add(fieldInfo);
@@ -213,12 +203,9 @@ namespace LiteEntitySystem.Internal
                             foreach (var syncableField in syncableType.GetFields(bindingFlags))
                             {
                                 var syncableFieldType = syncableField.FieldType;
-                                if(IsRemoteCallType(syncableFieldType))
-                                {
-                                    if (!syncableField.IsStatic)
-                                        throw new Exception($"RemoteCalls should be static! (Class: {entType} Field: {field.Name})");
-                                    continue;
-                                }
+                                if(IsRemoteCallType(syncableFieldType) && !syncableField.IsStatic)
+                                    throw new Exception($"RemoteCalls should be static! (Class: {syncableType} Field: {syncableField.Name})");
+                                
                                 if (!syncableFieldType.IsValueType || 
                                     !syncableFieldType.IsGenericType || 
                                     syncableFieldType.GetGenericTypeDefinition() != typeof(SyncVar<>) ||

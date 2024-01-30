@@ -85,7 +85,7 @@ namespace Code.Client
             {
                 AutoRecycle = true,
                 EnableStatistics = true,
-                IPv6Mode = IPv6Mode.Disabled,
+                IPv6Enabled = false,
                 SimulateLatency = true,
                 SimulationMinLatency = 50,
                 SimulationMaxLatency = 60,
@@ -156,7 +156,7 @@ OUT: {BytesOutPerSecond/1000f} KB/s({PacketsOutPerSecond})";
 
         void INetEventListener.OnPeerConnected(NetPeer peer)
         {
-            Debug.Log("[C] Connected to server: " + peer.EndPoint);
+            Debug.Log("[C] Connected to server: " + peer);
             _server = peer;
             
             SendPacket(new JoinPacket {UserName = _userName}, DeliveryMethod.ReliableOrdered);

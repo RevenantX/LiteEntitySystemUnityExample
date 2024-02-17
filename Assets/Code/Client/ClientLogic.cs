@@ -103,10 +103,10 @@ namespace Code.Client
             {
                 _secondTimer -= 1f;
                 var stats = _netManager.Statistics;
-                BytesInPerSecond = (int)(stats.BytesReceived);
-                PacketsInPerSecond = (int)(stats.PacketsReceived);
-                BytesOutPerSecond = (int)(stats.BytesSent);
-                PacketsOutPerSecond = (int)(stats.PacketsSent);
+                BytesInPerSecond = (int)stats.BytesReceived;
+                PacketsInPerSecond = (int)stats.PacketsReceived;
+                BytesOutPerSecond = (int)stats.BytesSent;
+                PacketsOutPerSecond = (int)stats.PacketsSent;
                 stats.Reset();
             }
             if (_entityManager != null)

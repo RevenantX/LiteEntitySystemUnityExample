@@ -127,21 +127,23 @@ namespace LiteEntitySystem
 
         private readonly struct SyncCallInfo
         {
-            public readonly MethodCallDelegate OnSync;
-            public readonly InternalEntity Entity;
-            public readonly int PrevDataPos;
+            private readonly MethodCallDelegate _onSync;
+            private readonly InternalEntity _entity;
+            private readonly int _prevDataPos;
 
             public SyncCallInfo(MethodCallDelegate onSync, InternalEntity entity, int prevDataPos)
             {
-                OnSync = onSync;
-                Entity = entity;
-                PrevDataPos = prevDataPos;
+                _onSync = onSync;
+                _entity = entity;
+                _prevDataPos = prevDataPos;
             }
 
-            public void Execute(ServerStateData state) => OnSync(Entity, new ReadOnlySpan<byte>(state.Data, PrevDataPos, state.Size-PrevDataPos));
+            public void Execute(ServerStateData state) => _onSync(_entity, new ReadOnlySpan<byte>(state.Data, _prevDataPos, state.Size-_prevDataPos));
         }
         private SyncCallInfo[] _syncCalls;
         private int _syncCallsCount;
+        private SyncCallInfo[] _syncCallsBeforeConstruct;
+        private int _syncCallsBeforeConstructCount;
         
         private InternalEntity[] _entitiesToConstruct = new InternalEntity[64];
         private int _entitiesToConstructCount;
@@ -256,6 +258,7 @@ namespace LiteEntitySystem
                         return DeserializeResult.Error;
                     _entitiesToConstructCount = 0;
                     _syncCallsCount = 0;
+                    _syncCallsBeforeConstructCount = 0;
                     //read header and decode
                     int decodedBytes;
                     var header = *(BaselineDataHeader*)rawData;
@@ -443,7 +446,7 @@ namespace LiteEntitySystem
             //reset owned entities
             foreach (var entity in _predictedEntityFilter)
             {
-                ref var classData = ref entity.GetClassData();
+                ref readonly var classData = ref entity.GetClassData();
                 if(entity.IsRemoteControlled && !classData.HasRemoteRollbackFields)
                     continue;
 
@@ -507,7 +510,7 @@ namespace LiteEntitySystem
                 if(entity.IsLocal || !entity.IsLocalControlled)
                     continue;
                 
-                ref var classData = ref entity.GetClassData();
+                ref readonly var classData = ref entity.GetClassData();
                 for(int i = 0; i < classData.InterpolatedCount; i++)
                 {
                     fixed (byte* currentDataPtr = _interpolatedInitialData[entity.Id])
@@ -538,8 +541,7 @@ namespace LiteEntitySystem
             if (_stateB != null)
             {
                 ServerTick = Utils.LerpSequence(_stateA.Tick, _stateB.Tick, (float)(_timer/_lerpTime));
-                _stateB.ExecuteRpcs(this, _stateA.Tick, false, true);
-                _stateB.ExecuteRpcs(this, _stateA.Tick, false, false);
+                _stateB.ExecuteRpcs(this, _stateA.Tick, false);
             }
             
             //remove overflow
@@ -651,7 +653,7 @@ namespace LiteEntitySystem
                 if (!entity.IsLocalControlled && !entity.IsLocal)
                     continue;
                 
-                ref var classData = ref entity.GetClassData();
+                ref readonly var classData = ref entity.GetClassData();
                 fixed (byte* currentDataPtr = _interpolatedInitialData[entity.Id], prevDataPtr = _interpolatePrevData[entity.Id])
                 {
                     for(int i = 0; i < classData.InterpolatedCount; i++)
@@ -761,20 +763,25 @@ namespace LiteEntitySystem
             ServerTick = _stateA.Tick;
             
             //execute syncable fields first
-            _stateA.ExecuteRpcs(this, minimalTick, firstSync, true);
+            _stateA.ExecuteSyncableRpcs(this, minimalTick, firstSync);
+            
+            //Make OnSyncCalls before construct
+            for(int i = 0; i < _syncCallsBeforeConstructCount; i++)
+                _syncCallsBeforeConstruct[i].Execute(_stateA);
+            _syncCallsBeforeConstructCount = 0;
 
             //Call construct methods
             for (int i = 0; i < _entitiesToConstructCount; i++)
                 ConstructEntity(_entitiesToConstruct[i]);
             _entitiesToConstructCount = 0;
-
-            //Make OnSyncCalls
-            for (int i = 0; i < _syncCallsCount; i++)
+            
+            //Make OnSyncCalls before construct
+            for(int i = 0; i < _syncCallsCount; i++)
                 _syncCalls[i].Execute(_stateA);
             _syncCallsCount = 0;
             
             //execute entity rpcs
-            _stateA.ExecuteRpcs(this, minimalTick, firstSync, false);
+            _stateA.ExecuteRpcs(this, minimalTick, firstSync);
             
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
                 lagCompensatedEntity.WriteHistory(ServerTick);
@@ -784,7 +791,6 @@ namespace LiteEntitySystem
         {
             for (int readerPosition = 0; readerPosition < _stateA.Size;)
             {
-                bool writeInterpolationData;
                 bool fullSync = true;
                 int endPos = 0;
                 if (!fistSync) //diff data
@@ -802,7 +808,8 @@ namespace LiteEntitySystem
                     return false;
                 }
                 var entity = EntitiesDict[entityId];
-                ref var classData = ref Unsafe.AsRef<EntityClassData>(null);
+                ref readonly var classData = ref EntityClassData.Empty;
+                bool writeInterpolationData;
                 if (fullSync)
                 {
                     //Logger.Log($"[CEM] ReadBaseline Entity: {entityId} pos: {bytesRead}");
@@ -852,7 +859,10 @@ namespace LiteEntitySystem
                     readerPosition = endPos;
                     continue;
                 }
+                
                 Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
+                Utils.ResizeOrCreate(ref _syncCallsBeforeConstruct, _syncCallsBeforeConstructCount + classData.FieldsCount);
+                
                 int fieldsFlagsOffset = readerPosition - classData.FieldsFlagsSize;
                 fixed (byte* interpDataPtr = _interpolatedInitialData[entity.Id], predictedData = _predictedEntitiesData[entity.Id])
                     for (int i = 0; i < classData.FieldsCount; i++)
@@ -878,7 +888,12 @@ namespace LiteEntitySystem
                             if (field.OnSync != null)
                             {
                                 if (field.TypeProcessor.SetFromAndSync(entity, field.Offset, readDataPtr))
-                                    _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition);
+                                {
+                                    if (field.OnSyncExecutionOrder == OnSyncExecutionOrder.BeforeConstruct)
+                                        _syncCallsBeforeConstruct[_syncCallsBeforeConstructCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition);
+                                    else //call on sync immediately
+                                        _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition);
+                                }
                             }
                             else
                             {

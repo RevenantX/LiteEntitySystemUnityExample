@@ -37,8 +37,8 @@ namespace LiteEntitySystem
     {
         public const int MaxStoredInputs = 30;
         
-        private readonly IdGeneratorUShort _entityIdQueue = new(MaxSyncedEntityCount);
-        private readonly IdGeneratorByte _playerIdQueue = new(MaxPlayers);
+        private readonly IdGeneratorUShort _entityIdQueue = new(1, MaxSyncedEntityCount);
+        private readonly IdGeneratorByte _playerIdQueue = new(1, MaxPlayers);
         private readonly Queue<RemoteCallPacket> _rpcPool = new();
         private readonly Queue<byte[]> _inputPool = new();
         private readonly Queue<byte[]> _pendingClientRequests = new();
@@ -80,11 +80,6 @@ namespace LiteEntitySystem
             : base(typesMap, inputProcessor, NetworkMode.Server, framesPerSecond, packetHeader)
         {
             InternalPlayerId = ServerPlayerId;
-            for (int i = 1; i <= byte.MaxValue; i++)
-                _playerIdQueue.ReuseId((byte)i);
-            for (ushort i = FirstEntityId; i < MaxSyncedEntityCount; i++)
-                _entityIdQueue.ReuseId(i);
-
             _packetBuffer[0] = packetHeader;
             SendRate = sendRate;
         }

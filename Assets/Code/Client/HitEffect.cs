@@ -23,5 +23,14 @@ namespace Code.Client
             gameObject.SetActive(true);
             _source.PlayOneShot(_hitClips.GetRandomElement());
         }
+
+        private void Update()
+        {
+            if (!_source.isPlaying)
+            {
+                gameObject.SetActive(false);
+                _onDeathCallback?.Invoke(this);
+            }
+        }
     }
 }

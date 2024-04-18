@@ -60,6 +60,11 @@ namespace LiteEntitySystem
         /// </summary>
         public readonly ServerSendRate SendRate;
 
+        /// <summary>
+        /// Add try catch to entity updates
+        /// </summary>
+        public bool SafeEntityUpdate = false;
+
         private ushort _minimalTick;
 
         /// <summary>
@@ -121,6 +126,14 @@ namespace LiteEntitySystem
         }
 
         /// <summary>
+        /// Get player by owner id
+        /// </summary>
+        /// <param name="ownerId">id of player owner (Entity.OwnerId)</param>
+        /// <returns></returns>
+        public NetPlayer GetPlayer(byte ownerId) =>
+            _netPlayers.TryGetValue(ownerId, out var p) ? p : null;
+
+        /// <summary>
         /// Remove player using NetPeer.Tag (is you assigned it or used <see cref="AddPlayer"/> with assignToTag)
         /// </summary>
         /// <param name="player">player to remove</param>
@@ -150,8 +163,8 @@ namespace LiteEntitySystem
         /// </summary>
         /// <param name="player">player</param>
         /// <returns>Instance if found, null if not</returns>
-        public ControllerLogic GetPlayerController(AbstractNetPeer player)
-            => GetPlayerController(player.AssignedPlayer);
+        public ControllerLogic GetPlayerController(AbstractNetPeer player) =>
+            GetPlayerController(player.AssignedPlayer);
         
         /// <summary>
         /// Returns controller owned by the player
@@ -531,10 +544,9 @@ namespace LiteEntitySystem
                 entity = (T)AddEntity(new EntityParams(
                     classData.ClassId, 
                     entityId,
-                    stateSerializer.IncrementVersion(_tick),
+                    stateSerializer.NextVersion,
                     this));
-                stateSerializer.Init(ref classData, entity);
-                
+                stateSerializer.Init(ref classData, entity, _tick);
                 initMethod?.Invoke(entity);
                 ConstructEntity(entity);
             }
@@ -542,9 +554,6 @@ namespace LiteEntitySystem
             return entity;
         }
         
-        public NetPlayer GetPlayer(byte ownerId) =>
-            _netPlayers.TryGetValue(ownerId, out var p) ? p : null;
-
         protected override void OnLogicTick()
         {
             //read pending client requests
@@ -585,8 +594,13 @@ namespace LiteEntitySystem
                 }
             }
 
-            foreach (var aliveEntity in AliveEntities)
-                aliveEntity.Update();
+            if (SafeEntityUpdate)
+                foreach (var aliveEntity in AliveEntities)
+                    aliveEntity.SafeUpdate();
+            else
+                foreach (var aliveEntity in AliveEntities)
+                    aliveEntity.Update();
+       
 
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
                 lagCompensatedEntity.WriteHistory(_tick);

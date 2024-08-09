@@ -178,6 +178,7 @@ namespace LiteEntitySystem
         internal byte InternalPlayerId;
         protected readonly InputProcessor InputProcessor;
         protected int SpeedMultiplier;
+        protected int TotalTicksPassed;
         
         public static void RegisterFieldType<T>(InterpolatorDelegateWithReturn<T> interpolationDelegate) where T : unmanaged =>
             ValueProcessors.RegisteredProcessors[typeof(T)] = new UserTypeProcessor<T>(interpolationDelegate);
@@ -194,17 +195,17 @@ namespace LiteEntitySystem
             if (IntPtr.Size == 4)
                 K4os.Compression.LZ4.LZ4Codec.Enforce32 = true;
 #endif
-            RegisterBasicFieldType(new ValueTypeProcessorByte());
-            RegisterBasicFieldType(new ValueTypeProcessorSByte());
-            RegisterBasicFieldType(new ValueTypeProcessorShort());
-            RegisterBasicFieldType(new ValueTypeProcessorUShort());
+            RegisterBasicFieldType(new BasicTypeProcessor<byte>());
+            RegisterBasicFieldType(new BasicTypeProcessor<sbyte>());
+            RegisterBasicFieldType(new BasicTypeProcessor<short>());
+            RegisterBasicFieldType(new BasicTypeProcessor<ushort>());
             RegisterBasicFieldType(new ValueTypeProcessorInt());
-            RegisterBasicFieldType(new ValueTypeProcessorUInt());
+            RegisterBasicFieldType(new BasicTypeProcessor<uint>());
             RegisterBasicFieldType(new ValueTypeProcessorLong());
-            RegisterBasicFieldType(new ValueTypeProcessorULong());
+            RegisterBasicFieldType(new BasicTypeProcessor<ulong>());
             RegisterBasicFieldType(new ValueTypeProcessorFloat());
             RegisterBasicFieldType(new ValueTypeProcessorDouble());
-            RegisterBasicFieldType(new ValueTypeProcessorBool());
+            RegisterBasicFieldType(new BasicTypeProcessor<bool>());
             RegisterBasicFieldType(new ValueTypeProcessorEntitySharedReference());
             RegisterFieldType<FloatAngle>(FloatAngle.Lerp);
         }
@@ -262,6 +263,7 @@ namespace LiteEntitySystem
         {
             EntitiesCount = 0;
 
+            TotalTicksPassed = 0;
             _tick = 0;
             VisualDeltaTime = 0.0;
             _accumulator = 0;
@@ -270,12 +272,6 @@ namespace LiteEntitySystem
             _localIdQueue.Reset();
             _stopwatch.Restart();
             AliveEntities.Clear();
-
-            for (int i = 0; i < _singletonEntities.Length; i++)
-            {
-                _singletonEntities[i]?.DestroyInternal();
-                _singletonEntities[i] = null;
-            }
             
             for (int i = FirstEntityId; i <= MaxSyncedEntityId; i++)
             {
@@ -286,6 +282,11 @@ namespace LiteEntitySystem
             {
                 EntitiesDict[i]?.DestroyInternal();
                 EntitiesDict[i] = null;
+            }
+            for (int i = 0; i < _singletonEntities.Length; i++)
+            {
+                _singletonEntities[i]?.DestroyInternal();
+                _singletonEntities[i] = null;
             }
 
             for (int i = 0; i < _entityFilters.Length; i++)
@@ -426,6 +427,7 @@ namespace LiteEntitySystem
                 EntityClassInfo<T>.ClassId,
                 _localIdQueue.GetNewId(), 
                 0,
+                TotalTicksPassed,
                 this);
             var entity = (T)AddEntity(entityParams);
             if (IsClient && entity is EntityLogic logic)
@@ -585,6 +587,7 @@ namespace LiteEntitySystem
                 }
                 OnLogicTick();
                 _tick++;
+                TotalTicksPassed++;
 
                 _accumulator -= maxTicks;
                 updates++;

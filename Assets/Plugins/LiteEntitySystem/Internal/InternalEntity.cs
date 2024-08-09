@@ -4,6 +4,21 @@ using System.Runtime.CompilerServices;
 
 namespace LiteEntitySystem.Internal
 {
+    internal struct EntityDataHeader
+    {
+        public ushort Id;
+        public ushort ClassId;
+        public byte Version;
+        public int CreationTick;
+    }
+    
+    public class EntityComparer : IComparer<InternalEntity>
+    {
+        public int Compare(InternalEntity x, InternalEntity y) => x.CompareTo(y);
+
+        public static readonly EntityComparer Instance = new();
+    }
+    
     public abstract class InternalEntity : IComparable<InternalEntity>
     {
         /// <summary>
@@ -15,6 +30,11 @@ namespace LiteEntitySystem.Internal
         /// Entity instance id
         /// </summary>
         public readonly ushort Id;
+
+        /// <summary>
+        /// Entity creation tick number that can be more than ushort
+        /// </summary>
+        internal readonly int CreationTick;
         
         /// <summary>
         /// Entity manager
@@ -25,6 +45,14 @@ namespace LiteEntitySystem.Internal
         /// Entity version (for id reuse)
         /// </summary>
         public readonly byte Version;
+
+        internal EntityDataHeader DataHeader => new EntityDataHeader
+        {
+            Id = Id,
+            ClassId = ClassId,
+            CreationTick = CreationTick,
+            Version = Version
+        };
         
         [SyncVarFlags(SyncFlags.NeverRollBack)]
         private SyncVar<bool> _isDestroyed;
@@ -133,6 +161,14 @@ namespace LiteEntitySystem.Internal
         }
 
         /// <summary>
+        /// Called at rollback begin after all values reset to first frame in rollback queue.
+        /// </summary>
+        protected internal virtual void OnRollback()
+        {
+            
+        }
+
+        /// <summary>
         /// Called only on <see cref="ClientEntityManager.Update"/> and if entity has attribute <see cref="UpdateableEntity"/>
         /// </summary>
         protected internal virtual void VisualUpdate()
@@ -193,22 +229,25 @@ namespace LiteEntitySystem.Internal
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void ExecuteRPC(in RemoteCall rpc)
-        {
-            ((Action<InternalEntity>)rpc.CachedAction)(this);
-        }
+        protected void ExecuteRPC(in RemoteCall rpc) => rpc.Call(this);
         
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void ExecuteRPC<T>(in RemoteCall<T> rpc, T value) where T : unmanaged
-        {
-            ((Action<InternalEntity, T>)rpc.CachedAction)(this, value);
-        }
+        protected void ExecuteRPC<T>(in RemoteCall<T> rpc, T value) where T : unmanaged => rpc.Call(this, value);
         
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected void ExecuteRPC<T>(in RemoteCallSpan<T> rpc, ReadOnlySpan<T> value) where T : unmanaged
-        {
-            ((SpanAction<InternalEntity, T>)rpc.CachedAction)(this, value);
-        }
+        protected void ExecuteRPC<T>(in RemoteCallSpan<T> rpc, ReadOnlySpan<T> value) where T : unmanaged => rpc.Call(this, value);
+        
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected void ExecuteRPC<T1, T2>(in RemoteCallValueSpan<T1, T2> rpc, T1 value1, ReadOnlySpan<T2> value2) 
+            where T1 : unmanaged 
+            where T2 : unmanaged => 
+            rpc.Call(this, value1, value2);
+        
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected void ExecuteRPC<T1, T2>(in RemoteCallSpan<T1, T2> rpc, ReadOnlySpan<T1> value1, ReadOnlySpan<T2> value2)      
+            where T1 : unmanaged 
+            where T2 : unmanaged => 
+            rpc.Call(this, value1, value2);
 
         /// <summary>
         /// Method for registering RPCs and OnChange notifications
@@ -225,10 +264,19 @@ namespace LiteEntitySystem.Internal
             Id = entityParams.Id;
             ClassId = entityParams.ClassId;
             Version = entityParams.Version;
+            CreationTick = entityParams.CreationTime;
         }
 
         public int CompareTo(InternalEntity other)
         {
+            int creationTimeDiff = CreationTick - other.CreationTick;
+            if (creationTimeDiff != 0)
+                return creationTimeDiff;
+
+            int versionDiff = Version - other.Version;
+            if (versionDiff != 0)
+                return versionDiff;
+            
             //local first because mostly this is unity physics or something similar
             return (Id >= EntityManager.MaxSyncedEntityCount ? Id - ushort.MaxValue : Id) -
                    (other.Id >= EntityManager.MaxSyncedEntityCount ? other.Id - ushort.MaxValue : other.Id);

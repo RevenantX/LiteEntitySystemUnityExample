@@ -61,7 +61,7 @@ namespace Code.Server
 
             _serverEntityManager.AddSignleton<UnityPhysicsManager>();
 
-            for (int i = 0; i < 60; i++)
+            for (int i = 0; i < 2000; i++)
             {
                 int botNum = i;
                 var botPlayer = _serverEntityManager.AddEntity<BasePlayer>(e =>

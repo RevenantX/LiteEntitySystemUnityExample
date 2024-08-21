@@ -68,10 +68,10 @@ namespace Code.Shared
 
         public void Init(byte playerId, Vector2 position, Vector2 speed)
         {
-            Position = position;
-            Speed = speed;
-            ShooterPos = position;
-            ShooterPlayerId = playerId;
+            Position.Value = position;
+            Speed.Value = speed;
+            ShooterPos.Value = position;
+            ShooterPlayerId.Value = playerId;
         }
 
         protected override void Update()
@@ -79,7 +79,7 @@ namespace Code.Shared
             _prevPos = Position.Value;
             if (IsLocal || EntityManager.IsServer)
             {
-                Position += Speed.Value * EntityManager.DeltaTimeF;
+                Position.Value += Speed.Value * EntityManager.DeltaTimeF;
                 _lifeTime -= EntityManager.DeltaTimeF;
                 if (EntityManager.IsServer && _lifeTime <= 0f)
                 {

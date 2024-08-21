@@ -8,6 +8,8 @@ namespace Code.Client
         private TextMesh _health;
         private BasePlayer _player;
 
+        private byte _lastHealth;
+
         public static RemotePlayerView Create(RemotePlayerView prefab, BasePlayer player)
         {
             var obj = Instantiate(prefab, player.UnityObject.transform);
@@ -31,7 +33,11 @@ namespace Code.Client
         private void Update()
         {
             _health.transform.position = _player.Position;
-            _health.text = _player.Health.ToString();
+            if (_lastHealth != _player.Health)
+            {
+                _lastHealth = _player.Health;
+                _health.text = _player.Health.ToString();
+            }
         }
     }
 }

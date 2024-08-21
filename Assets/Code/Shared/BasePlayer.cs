@@ -19,7 +19,7 @@ namespace Code.Shared
         [SyncVarFlags(SyncFlags.AlwaysRollback)] 
         private SyncVar<byte> _health;
         
-        private SyncVar<float> _speed = 3f;
+        private SyncVar<float> _speed;
         public readonly SyncString Name = new ();
         private readonly SyncTimer _shootTimer = new (0.5f);
         private static RemoteCall<ShootPacket> _shootRemoteCall;
@@ -41,7 +41,7 @@ namespace Code.Shared
         
         public BasePlayer(EntityParams entityParams) : base(entityParams)
         {
-
+            _speed.Value = 3f;
         }
 
         protected override void RegisterRPC(ref RPCRegistrator r)
@@ -87,10 +87,10 @@ namespace Code.Shared
 
         public void Spawn(Vector2 position)
         {
-            _position = position;
+            _position.Value = position;
             _rotation.Value = Random.Range(0f, 180f);
             _targetRotation = _rotation.Value;
-            _health = 100;
+            _health.Value = 100;
         }
 
         public struct HitPacket
@@ -101,9 +101,9 @@ namespace Code.Shared
         private void Damage(byte damage)
         {
             if (damage > _health)
-                _health = 0;
+                _health.Value = 0;
             else
-                _health -= damage;
+                _health.Value -= damage;
             
             if (EntityManager.IsServer && _health == 0)
                 Destroy();
@@ -131,7 +131,7 @@ namespace Code.Shared
         {
             base.Update();
             _rotation.Value = _targetRotation;
-            _position += _velocity * EntityManager.DeltaTimeF;
+            _position.Value += _velocity * EntityManager.DeltaTimeF;
             _shootTimer.Update(EntityManager.DeltaTimeF);
             if (_shootTimer.IsTimeElapsed && (_isFiring || _projectileFire))
             {

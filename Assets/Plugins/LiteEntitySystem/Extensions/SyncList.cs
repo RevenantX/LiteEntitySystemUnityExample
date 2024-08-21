@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using LiteEntitySystem.Internal;
 
 namespace LiteEntitySystem.Extensions
@@ -45,14 +44,14 @@ namespace LiteEntitySystem.Extensions
             if (_data.Length < _serverData.Length)
                 Array.Resize(ref _data, _serverData.Length);
             fixed (void* serverData = _serverData, data = _data)
-                Unsafe.CopyBlock(data, serverData, (uint)(_count * sizeof(T)));
+                RefMagic.CopyBlock(data, serverData, (uint)(_count * sizeof(T)));
         }
 
         protected internal override unsafe void OnRollback()
         {
             _count = _serverCount;
             fixed (void* serverData = _serverData, data = _data)
-                Unsafe.CopyBlock(data, serverData, (uint)(_count * sizeof(T)));
+                RefMagic.CopyBlock(data, serverData, (uint)(_count * sizeof(T)));
         }
 
         protected internal override void RegisterRPC(ref SyncableRPCRegistrator r)

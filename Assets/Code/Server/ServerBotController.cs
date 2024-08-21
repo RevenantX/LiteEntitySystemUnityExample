@@ -17,6 +17,12 @@ namespace Code.Server
 
         public override void BeforeControlledUpdate()
         {
+            if (Random.Range(0, 20) != 0)
+            {
+                ControlledEntity.SetInput(false, false, _rotation, Vector2.zero);
+                return;
+            }
+            
             if (_rotationChangeTimer.UpdateAndReset(EntityManager.DeltaTimeF))
             {
                 _rotation += Random.Range(-30f, 30f);

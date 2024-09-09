@@ -21,6 +21,9 @@ namespace LiteEntitySystem.Internal
     
     public abstract class InternalEntity : InternalBaseClass, IComparable<InternalEntity>
     {
+        [SyncVarFlags(SyncFlags.NeverRollBack)]
+        internal SyncVar<byte> InternalOwnerId;
+        
         /// <summary>
         /// Entity class id
         /// </summary>
@@ -102,7 +105,7 @@ namespace LiteEntitySystem.Internal
         /// ServerPlayerId - 0
         /// Singletons always controlled by server
         /// </summary>
-        public virtual byte OwnerId => EntityManager.ServerPlayerId;
+        public byte OwnerId => InternalOwnerId;
 
         /// <summary>
         /// Is locally created entity
@@ -195,7 +198,7 @@ namespace LiteEntitySystem.Internal
             ref var classData = ref GetClassData();
             
             //setup field ids for BindOnChange and pass on server this for OnChangedEvent to StateSerializer
-            InternalEntity onChangeTarget = EntityManager.IsServer && !IsLocal ? this : null;
+            var onChangeTarget = EntityManager.IsServer && !IsLocal ? this : null;
             for (int i = 0; i < classData.FieldsCount; i++)
             {
                 ref var field = ref classData.Fields[i];

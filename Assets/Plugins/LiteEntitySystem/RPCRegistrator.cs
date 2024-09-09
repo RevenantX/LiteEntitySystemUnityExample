@@ -7,7 +7,7 @@ namespace LiteEntitySystem
 {
     public delegate void SpanAction<T>(ReadOnlySpan<T> data);
     public delegate void SpanAction<TCaller, T>(TCaller caller, ReadOnlySpan<T> data);
-    internal delegate void MethodCallDelegate(object classPtr, ReadOnlySpan<byte> buffer1, ReadOnlySpan<byte> buffer2);
+    internal delegate void MethodCallDelegate(object classPtr, ReadOnlySpan<byte> buffer);
     internal delegate void OnSyncCallDelegate(object classPtr, ReadOnlySpan<byte> buffer);
     
     public readonly struct RemoteCall
@@ -15,7 +15,7 @@ namespace LiteEntitySystem
         internal readonly Action<InternalBaseClass> CachedAction;
         internal RemoteCall(Action<InternalBaseClass> action) => CachedAction = action;
         internal void Call(InternalBaseClass self) => CachedAction?.Invoke(self);
-        internal static MethodCallDelegate CreateMCD<TClass>(Action<TClass> methodToCall) => (classPtr, _, _) => methodToCall((TClass)classPtr);
+        internal static MethodCallDelegate CreateMCD<TClass>(Action<TClass> methodToCall) => (classPtr, _) => methodToCall((TClass)classPtr);
     }
     
     public readonly struct RemoteCall<T> where T : unmanaged
@@ -24,7 +24,7 @@ namespace LiteEntitySystem
         internal RemoteCall(Action<InternalBaseClass, T> action) => CachedAction = action;
         internal void Call(InternalBaseClass self, T data) => CachedAction?.Invoke(self, data);
         internal static unsafe MethodCallDelegate CreateMCD<TClass>(Action<TClass, T> methodToCall) =>
-            (classPtr, buffer, _) =>
+            (classPtr, buffer) =>
             {
                 fixed (byte* data = buffer)
                     methodToCall((TClass)classPtr, *(T*)data);
@@ -37,7 +37,7 @@ namespace LiteEntitySystem
         internal RemoteCallSpan(SpanAction<InternalBaseClass, T> action) => CachedAction = action;
         internal void Call(InternalBaseClass self, ReadOnlySpan<T> data) => CachedAction?.Invoke(self, data);
         internal static MethodCallDelegate CreateMCD<TClass>(SpanAction<TClass, T> methodToCall) =>
-            (classPtr, buffer, _) => methodToCall((TClass)classPtr, MemoryMarshal.Cast<byte, T>(buffer));
+            (classPtr, buffer) => methodToCall((TClass)classPtr, MemoryMarshal.Cast<byte, T>(buffer));
     }
     
     public readonly struct RemoteCallSerializable<T> where T : struct, ISpanSerializable
@@ -46,7 +46,7 @@ namespace LiteEntitySystem
         internal RemoteCallSerializable(Action<InternalBaseClass, T> action) => CachedAction = action;
         internal void Call(InternalBaseClass self, T data) => CachedAction?.Invoke(self, data);
         internal static MethodCallDelegate CreateMCD<TClass>(Action<TClass, T> methodToCall) =>
-            (classPtr, buffer, _) =>
+            (classPtr, buffer) =>
             {
                 var t = default(T);
                 t.Deserialize(new SpanReader(buffer));
@@ -305,7 +305,7 @@ namespace LiteEntitySystem
             remoteCallHandle = new RemoteCall(s =>
             {
                 var sf = (SyncableField)s;
-                sf.ParentEntityInternal.ServerManager?.AddRemoteCall(sf.ParentEntityInternal.Id, (ushort)(rpcId + sf.RPCOffset), sf.Flags);
+                sf.ParentEntityInternal?.ServerManager?.AddRemoteCall(sf.ParentEntityInternal.Id, (ushort)(rpcId + sf.RPCOffset), sf.Flags);
             });
         }
 
@@ -318,7 +318,7 @@ namespace LiteEntitySystem
             remoteCallHandle = new RemoteCall<T>((s, value) =>
             {
                 var sf = (SyncableField)s;
-                sf.ParentEntityInternal.ServerManager?.AddRemoteCall(sf.ParentEntityInternal.Id, new ReadOnlySpan<T>(&value, 1), (ushort)(rpcId + sf.RPCOffset), sf.Flags);
+                sf.ParentEntityInternal?.ServerManager?.AddRemoteCall(sf.ParentEntityInternal.Id, new ReadOnlySpan<T>(&value, 1), (ushort)(rpcId + sf.RPCOffset), sf.Flags);
             });
         }
         
@@ -331,7 +331,7 @@ namespace LiteEntitySystem
             remoteCallHandle = new RemoteCallSpan<T>((s, value) =>
             {
                 var sf = (SyncableField)s;
-                sf.ParentEntityInternal.ServerManager?.AddRemoteCall(sf.ParentEntityInternal.Id, value, (ushort)(rpcId + sf.RPCOffset), sf.Flags);
+                sf.ParentEntityInternal?.ServerManager?.AddRemoteCall(sf.ParentEntityInternal.Id, value, (ushort)(rpcId + sf.RPCOffset), sf.Flags);
             });
         }
     }

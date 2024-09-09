@@ -51,6 +51,15 @@ namespace Code.Shared
             r.CreateRPCAction(this, OnHit, ref _hitRemoteCall, ExecuteFlags.ExecuteOnPrediction | ExecuteFlags.SendToOther);
         }
 
+        /*
+        protected override bool IsNeedToSync(byte forPlayerId)
+        {
+            return true;
+            var otherPlayer = ServerManager.GetPlayerController(forPlayerId)?.GetControlledEntity<BasePlayer>();
+            return otherPlayer == null || (otherPlayer._position.Value - _position.Value).sqrMagnitude < 50f*50f;
+        }
+        */
+
         protected override void OnConstructed()
         {
             _unityPhys = EntityManager.GetSingleton<UnityPhysicsManager>();

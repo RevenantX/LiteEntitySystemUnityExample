@@ -179,6 +179,14 @@ namespace LiteEntitySystem
         /// <summary>
         /// Returns controller owned by the player
         /// </summary>
+        /// <param name="playerId">player</param>
+        /// <returns>Instance if found, null if not</returns>
+        public ControllerLogic GetPlayerController(byte playerId) =>
+            GetPlayerController(_netPlayers.TryGetValue(playerId, out var p) ? p : null);
+        
+        /// <summary>
+        /// Returns controller owned by the player
+        /// </summary>
         /// <param name="player">player to remove</param>
         /// <returns>Instance if found, null if not</returns>
         public ControllerLogic GetPlayerController(NetPlayer player)
@@ -187,7 +195,7 @@ namespace LiteEntitySystem
                 return null;
             foreach (var controller in GetControllers<ControllerLogic>())
             {
-                if (controller.OwnerId == player.Id)
+                if (controller.InternalOwnerId.Value == player.Id)
                     return controller;
             }
             return null;
@@ -560,15 +568,17 @@ namespace LiteEntitySystem
                 ushort entityId = _entityIdQueue.GetNewId();
                 ref var stateSerializer = ref _stateSerializers[entityId];
 
+                stateSerializer.AllocateMemory(ref classData);
                 entity = (T)AddEntity(new EntityParams(
                     classData.ClassId, 
                     entityId,
                     stateSerializer.NextVersion,
                     TotalTicksPassed,
                     this));
-                stateSerializer.Init(ref classData, entity, _tick);
+                stateSerializer.Init(entity, _tick);
                 initMethod?.Invoke(entity);
                 ConstructEntity(entity);
+                _changedEntities.Add(entity);
             }
             //Debug.Log($"[SEM] Entity create. clsId: {classData.ClassId}, id: {entityId}, v: {version}");
             return entity;
@@ -638,10 +648,16 @@ namespace LiteEntitySystem
             }
         }
         
-        internal void EntityChanged(InternalEntity entity, ushort fieldId)
+        internal void EntityFieldChanged<T>(InternalEntity entity, ushort fieldId, ref T newValue) where T : unmanaged
         {
             _changedEntities.Add(entity);
-            _stateSerializers[entity.Id].MarkChanged(fieldId, _tick);
+            _stateSerializers[entity.Id].MarkFieldChanged(fieldId, _tick, ref newValue);
+        }
+        
+        internal void EntityOwnerChanged(InternalEntity entity)
+        {
+            _changedEntities.Add(entity);
+            _stateSerializers[entity.Id].MarkOwnerChanged(_tick);
         }
 
         internal void PoolRpc(RemoteCallPacket rpcNode) =>
@@ -652,8 +668,9 @@ namespace LiteEntitySystem
             if (PlayersCount == 0)
                 return;
             var rpc = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
-            rpc.Init(_tick, 0, 0, rpcId, flags);
+            rpc.Init(_tick, 0, rpcId, flags);
             _stateSerializers[entityId].AddRpcPacket(rpc);
+            _changedEntities.Add(EntitiesDict[entityId]);
         }
         
         internal unsafe void AddRemoteCall<T>(ushort entityId, ReadOnlySpan<T> value, ushort rpcId, ExecuteFlags flags) where T : unmanaged
@@ -667,11 +684,12 @@ namespace LiteEntitySystem
                 Logger.LogError($"DataSize on rpc: {rpcId}, entity: {entityId} is more than {ushort.MaxValue}");
                 return;
             }
-            rpc.Init(_tick, (ushort)dataSize, 0, rpcId, flags);
+            rpc.Init(_tick, (ushort)dataSize, rpcId, flags);
             if(value.Length > 0)
                 fixed(void* rawValue = value, rawData = rpc.Data)
                     RefMagic.CopyBlock(rawData, rawValue, (uint)dataSize);
             _stateSerializers[entityId].AddRpcPacket(rpc);
+            _changedEntities.Add(EntitiesDict[entityId]);
         }
     }
 }

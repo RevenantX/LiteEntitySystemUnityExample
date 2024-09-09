@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace Code.Shared
 {
-    [SetEntityFlags(EntityFlags.UpdateOnClient)]
+    [EntityFlags(EntityFlags.UpdateOnClient)]
     public class UnityPhysicsManager : SingletonEntityLogic
     {
         public PhysicsScene2D PhysicsScene { get; private set; }

@@ -12,7 +12,7 @@ namespace Code.Shared
         public void Init(SimpleProjectile e) => e.Init(OwnerId, Position, Speed);
     }
     
-    [SetEntityFlags(EntityFlags.UpdateOnClient)]
+    [EntityFlags(EntityFlags.UpdateOnClient)]
     public class SimpleProjectile : EntityLogic
     {
         [SyncVarFlags(SyncFlags.Interpolated)]

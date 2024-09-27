@@ -13,6 +13,24 @@ namespace Code.Shared
             _mainCamera = Camera.main;
         }
 
+        protected override void Update()
+        {
+            base.Update();
+            if (ControlledEntity == null)
+                return;
+            const float maxPlayerDistance = 35f;
+            foreach (var otherPlayer in EntityManager.GetEntities<BasePlayer>())
+            {
+                ChangeEntityDiffSync(otherPlayer, (otherPlayer.Position - ControlledEntity.Position).sqrMagnitude < maxPlayerDistance * maxPlayerDistance);
+            }
+        }
+
+        protected override void OnEntityDiffSyncChanged(EntityLogic entity, bool enabled)
+        {
+            if (entity is BasePlayer bp)
+                bp.UnityObject.SetActive(enabled);
+        }
+
         protected override void VisualUpdate()
         {
             //input

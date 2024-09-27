@@ -51,15 +51,6 @@ namespace Code.Shared
             r.CreateRPCAction(this, OnHit, ref _hitRemoteCall, ExecuteFlags.ExecuteOnPrediction | ExecuteFlags.SendToOther);
         }
 
-        /*
-        protected override bool IsNeedToSync(byte forPlayerId)
-        {
-            return true;
-            var otherPlayer = ServerManager.GetPlayerController(forPlayerId)?.GetControlledEntity<BasePlayer>();
-            return otherPlayer == null || (otherPlayer._position.Value - _position.Value).sqrMagnitude < 50f*50f;
-        }
-        */
-
         protected override void OnConstructed()
         {
             _unityPhys = EntityManager.GetSingleton<UnityPhysicsManager>();
@@ -120,12 +111,14 @@ namespace Code.Shared
 
         private void OnHit(HitPacket p)
         {
-            ClientLogic.Instance.SpawnHit(p.Position);
+            if(UnityObject.activeSelf)
+                ClientLogic.Instance.SpawnHit(p.Position);
         }
         
         private void OnShoot(ShootPacket p)
         {
-            ClientLogic.Instance.SpawnShoot(p.Origin, p.Hit);
+            if(UnityObject.activeSelf)
+                ClientLogic.Instance.SpawnShoot(p.Origin, p.Hit);
         }
 
         public void SetInput(bool isFiring, bool isProjectileFiring, float rotation, Vector2 velocity)

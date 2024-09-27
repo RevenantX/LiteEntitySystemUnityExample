@@ -17,12 +17,6 @@ namespace Code.Server
 
         public override void BeforeControlledUpdate()
         {
-            if (Random.Range(0, 20) != 0)
-            {
-                ControlledEntity.SetInput(false, false, _rotation, Vector2.zero);
-                return;
-            }
-            
             if (_rotationChangeTimer.UpdateAndReset(EntityManager.DeltaTimeF))
             {
                 _rotation += Random.Range(-30f, 30f);
@@ -31,7 +25,7 @@ namespace Code.Server
             bool normalFire = Random.Range(0, 50) == 0;
             ControlledEntity.SetInput(
                 normalFire,
-                !normalFire && Random.Range(0, 50) == 0,
+                false,
                 _rotation,
                 new Vector2(Mathf.Cos(_rotation * Mathf.Deg2Rad),Mathf.Sin(_rotation * Mathf.Deg2Rad)*0.1f));
         }

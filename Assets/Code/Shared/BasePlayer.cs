@@ -64,6 +64,13 @@ namespace Code.Shared
             UnityObject.AddComponent<BasePlayerView>().AttachedPlayer = this;
         }
 
+        public void SetActive(bool active)
+        {
+            if (active)
+                UnityObject.transform.position = _position.Value;
+            UnityObject.SetActive(active);
+        }
+
         protected override void OnLagCompensationStart()
         {
             if (_rigidbody != null)

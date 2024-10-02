@@ -28,11 +28,14 @@ namespace Code.Shared
         protected override void OnEntityDiffSyncChanged(EntityLogic entity, bool enabled)
         {
             if (entity is BasePlayer bp)
-                bp.UnityObject.SetActive(enabled);
+                bp.SetActive(enabled);
         }
 
         protected override void VisualUpdate()
         {
+            if (ControlledEntity == null)
+                return;
+            
             //input
             Vector2 velocity = new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical"));
             Vector2 mousePos = _mainCamera.ScreenToWorldPoint(Input.mousePosition);
@@ -70,7 +73,7 @@ namespace Code.Shared
             if (input.Keys.HasFlagFast(MovementKeys.Right))
                 velocity.x = 1f;
             
-            ControlledEntity.SetInput(
+            ControlledEntity?.SetInput(
                 input.Keys.HasFlagFast(MovementKeys.Fire),
                 input.Keys.HasFlagFast(MovementKeys.Projectile),
                 input.Rotation,

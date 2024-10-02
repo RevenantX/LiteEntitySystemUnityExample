@@ -118,7 +118,10 @@ C_Tick: {_entityManager.Tick}
 C_LPRCS: {_entityManager.LastProcessedTick}
 C_StoredCommands: {_entityManager.StoredCommands}
 C_Entities: {_entityManager.EntitiesCount}
-C_LerpBuffer: {_entityManager.LerpBufferCount}
+C_ServerInputBuffer: {_entityManager.ServerInputBuffer}
+C_LerpBufferCount: {_entityManager.LerpBufferCount}
+C_LerpBufferTime: {_entityManager.LerpBufferTimeLength}
+Jitter: {_entityManager.NetworkJitter}
 Ping: {_ping}
 IN: {BytesInPerSecond/1000f} KB/s({PacketsInPerSecond})
 OUT: {BytesOutPerSecond/1000f} KB/s({PacketsOutPerSecond})";

@@ -135,9 +135,7 @@ namespace LiteEntitySystem
         /// Local player id (0 on server)
         /// </summary>
         public byte PlayerId => InternalPlayerId;
-
-        public int GameSpeedMultiplier => SpeedMultiplier;
-
+        
         public readonly byte HeaderByte;
         
         public bool InRollBackState => UpdateMode == UpdateMode.PredictionRollback;
@@ -177,8 +175,17 @@ namespace LiteEntitySystem
 
         internal byte InternalPlayerId;
         protected readonly InputProcessor InputProcessor;
-        protected int SpeedMultiplier;
+        protected float SpeedMultiplier;
         protected int TotalTicksPassed;
+
+        protected const float TimeSpeedChangeCoef = 0.1f;
+
+        /// <summary>
+        /// Is entity manager running
+        /// IsRunning - true after first update
+        /// IsRunning - sets to false after Reset() call
+        /// </summary>
+        public bool IsRunning => _stopwatch.IsRunning;
         
         public static void RegisterFieldType<T>(InterpolatorDelegateWithReturn<T> interpolationDelegate) where T : unmanaged =>
             ValueTypeProcessor.Registered[typeof(T)] = new UserTypeProcessor<T>(interpolationDelegate);
@@ -251,7 +258,7 @@ namespace LiteEntitySystem
             DeltaTimeF = (float) DeltaTime;
             _stopwatchFrequency = 1.0 / Stopwatch.Frequency;
             _deltaTimeTicks = (long)(DeltaTime * Stopwatch.Frequency);
-            _slowdownTicks = (long)(DeltaTime * 0.01f * Stopwatch.Frequency);
+            _slowdownTicks = (long)(DeltaTime * TimeSpeedChangeCoef * Stopwatch.Frequency);
             if (_slowdownTicks < 100)
                 _slowdownTicks = 100;
         }
@@ -270,7 +277,8 @@ namespace LiteEntitySystem
             _lastTime = 0;
             InternalPlayerId = 0;
             _localIdQueue.Reset();
-            _stopwatch.Restart();
+            _stopwatch.Stop();
+            _stopwatch.Reset();
             AliveEntities.Clear();
             
             for (int i = FirstEntityId; i <= MaxSyncedEntityId; i++)
@@ -571,7 +579,7 @@ namespace LiteEntitySystem
             VisualDeltaTime = ticksDelta * _stopwatchFrequency;
             _accumulator += ticksDelta;
             _lastTime = elapsedTicks;
-            long maxTicks = _deltaTimeTicks - SpeedMultiplier * _slowdownTicks;
+            long maxTicks = (long)(_deltaTimeTicks + SpeedMultiplier * _slowdownTicks);
 
             int updates = 0;
             while (_accumulator >= maxTicks)

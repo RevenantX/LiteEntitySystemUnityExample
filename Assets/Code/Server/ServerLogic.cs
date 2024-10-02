@@ -57,7 +57,7 @@ namespace Code.Server
                 typesMap,
                 (byte)PacketType.EntitySystem, 
                 NetworkGeneral.GameFPS, 
-                ServerSendRate.HalfOfFPS);
+                ServerSendRate.EqualToFPS);
 
             _serverEntityManager.AddSignleton<UnityPhysicsManager>();
 

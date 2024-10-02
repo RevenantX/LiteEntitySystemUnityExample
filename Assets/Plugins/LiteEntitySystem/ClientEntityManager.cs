@@ -80,6 +80,11 @@ namespace LiteEntitySystem
         public int LerpBufferCount => _readyStates.Count;
 
         /// <summary>
+        /// Total states time in interpolation buffer
+        /// </summary>
+        public float LerpBufferTimeLength => _readyStates.Count * DeltaTimeF * (int)_serverSendRate;
+
+        /// <summary>
         /// Client network peer
         /// </summary>
         public AbstractNetPeer NetPeer => _netPeer;
@@ -89,9 +94,20 @@ namespace LiteEntitySystem
         /// </summary>
         public float NetworkJitter { get; private set; }
 
-        public float NetworkJitterFrames => _adaptiveMiddlePoint;
+        /// <summary>
+        /// Preferred input and incoming states buffer length in seconds lowest bound
+        /// Buffer automatically increases to Jitter time + PreferredBufferTimeLowest
+        /// </summary>
+        public float PreferredBufferTimeLowest = 0.010f; 
+        
+        /// <summary>
+        /// Preferred input and incoming states buffer length in seconds lowest bound
+        /// Buffer automatically decreases to Jitter time + PreferredBufferTimeHighest
+        /// </summary>
+        public float PreferredBufferTimeHighest = 0.100f;
         
         private const int InputBufferSize = 128;
+        private const float TimeSpeedChangeFadeTime = 0.1f;
 
         struct InputCommand
         {
@@ -152,11 +168,11 @@ namespace LiteEntitySystem
         private float _logicLerpMsec;
         private ushort _lastReadyTick;
 
-        //adaptive lerp vars
-        private float _adaptiveMiddlePoint = 3f;
+        //time manipulation
         private readonly float[] _jitterSamples = new float[10];
         private int _jitterSampleIdx;
         private readonly Stopwatch _jitterTimer = new();
+        private float _jitterMiddle;
         
         //local player
         private NetPlayer _localPlayer;
@@ -324,7 +340,7 @@ namespace LiteEntitySystem
                     _lastReadyTick = ServerTick;
                     _inputCommands.Clear();
                     _isSyncReceived = true;
-                    _jitterTimer.Restart();
+                    _jitterTimer.Reset();
                     ConstructAndSync(true);
                     Logger.Log($"[CEM] Got baseline sync. Assigned player id: {header.PlayerId}, Original: {decodedBytes}, Tick: {header.Tick}, SendRate: {_serverSendRate}");
                 }
@@ -394,50 +410,44 @@ namespace LiteEntitySystem
             if (_stateB != null)
                 return true;
             if (_readyStates.Count == 0)
-            {
-                if (_adaptiveMiddlePoint < 3f)
-                    _adaptiveMiddlePoint = 3f;
                 return false;
-            }
             
-            bool adaptiveIncreased = false;
-            int jitterValuesCount = _jitterSamples.Length - 1;
-            NetworkJitter = 0;
-            for (int i = 0; i < jitterValuesCount; i++)
+            //get max and middle jitter
+            _jitterMiddle = 0f;
+            for (int i = 0; i < _jitterSamples.Length - 1; i++)
             {
                 float jitter = Math.Abs(_jitterSamples[i] - _jitterSamples[i + 1]);
                 if (jitter > NetworkJitter)
                     NetworkJitter = jitter;
-                jitter *= FramesPerSecond;
-                if (jitter > _adaptiveMiddlePoint)
-                {
-                    _adaptiveMiddlePoint = jitter;
-                    adaptiveIncreased = true;
-                }
+                _jitterMiddle += jitter;
             }
-            if (!adaptiveIncreased)
-                _adaptiveMiddlePoint = Utils.Lerp(_adaptiveMiddlePoint, Math.Max(1f, NetworkJitter*FramesPerSecond), 0.05f);
+            _jitterMiddle /= _jitterSamples.Length;
             
             _stateB = _readyStates.ExtractMin();
             _stateB.Preload(EntitiesDict);
             //Logger.Log($"Preload A: {_stateA.Tick}, B: {_stateB.Tick}");
-            _lerpTime = 
-                Utils.SequenceDiff(_stateB.Tick, _stateA.Tick) * DeltaTimeF *
-                (1f - (_readyStates.Count + 1 - _adaptiveMiddlePoint) * 0.02f);
 
+            float lowestBound = NetworkJitter + PreferredBufferTimeLowest;
+            float upperBound = NetworkJitter + PreferredBufferTimeHighest;
+
+            //tune buffer playing speed 
+            _lerpTime = Utils.SequenceDiff(_stateB.Tick, _stateA.Tick) * DeltaTimeF;
+            _lerpTime *= 1 - GetSpeedMultiplier(LerpBufferTimeLength)*TimeSpeedChangeCoef;
+
+            //tune game prediction and input generation speed
+            SpeedMultiplier = GetSpeedMultiplier(_stateB.BufferedInputsCount * DeltaTimeF);
+            
             //remove processed inputs
             while (_inputCommands.Count > 0 && Utils.SequenceDiff(_stateB.ProcessedTick, _inputCommands.Peek().Tick) >= 0)
                 _inputPool.Enqueue(_inputCommands.Dequeue().Data);
             
-            //tune game speed
-            if (_stateB.BufferedInputsCount > 4)
-                SpeedMultiplier = -1; //slowdown
-            else if (_stateB.BufferedInputsCount < 2 )
-                SpeedMultiplier = 1;  //speedup
-            else
-                SpeedMultiplier = 0;  //zero
-
             return true;
+
+            float GetSpeedMultiplier(float bufferTime)
+            {
+                return Utils.Lerp(-1f, 0f, Utils.InvLerp(lowestBound - TimeSpeedChangeFadeTime, lowestBound, bufferTime)) +
+                       Utils.Lerp(0f, 1f, Utils.InvLerp(upperBound, upperBound + TimeSpeedChangeFadeTime, bufferTime));
+            }
         }
 
         private unsafe void GoToNextState()
@@ -616,6 +626,9 @@ namespace LiteEntitySystem
                     entity.Update();
                 }
             }
+
+            if (NetworkJitter > _jitterMiddle)
+                NetworkJitter -= DeltaTimeF * 0.1f;
         }
 
         /// <summary>

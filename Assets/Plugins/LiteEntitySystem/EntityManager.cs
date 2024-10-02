@@ -135,7 +135,7 @@ namespace LiteEntitySystem
         /// Local player id (0 on server)
         /// </summary>
         public byte PlayerId => InternalPlayerId;
-        
+
         public readonly byte HeaderByte;
         
         public bool InRollBackState => UpdateMode == UpdateMode.PredictionRollback;
@@ -504,7 +504,7 @@ namespace LiteEntitySystem
         }
 
         private static bool IsEntityLagCompensated(InternalEntity e)
-            => !e.IsLocal && e is EntityLogic { HasLagCompensation: true };
+            => !e.IsLocal && e is EntityLogic && e.ClassData.LagCompensatedCount > 0;
 
         private bool IsEntityAlive(EntityClassData classData, InternalEntity entity)
             => classData.Flags.HasFlagFast(EntityFlags.Updateable) && (IsServer || entity.IsLocal || (IsClient && classData.Flags.HasFlagFast(EntityFlags.UpdateOnClient)));

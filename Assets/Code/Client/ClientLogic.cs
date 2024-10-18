@@ -86,7 +86,7 @@ namespace Code.Client
                 AutoRecycle = true,
                 EnableStatistics = true,
                 IPv6Enabled = false,
-                SimulateLatency = true,
+                SimulateLatency = false,
                 SimulationMinLatency = 50,
                 SimulationMaxLatency = 60,
                 SimulatePacketLoss = false,

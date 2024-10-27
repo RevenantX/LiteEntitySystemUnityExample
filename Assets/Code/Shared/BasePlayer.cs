@@ -66,6 +66,8 @@ namespace Code.Shared
 
         public void SetActive(bool active)
         {
+            if (UnityObject == null)
+                return;
             if (active)
                 UnityObject.transform.position = _position.Value;
             UnityObject.SetActive(active);

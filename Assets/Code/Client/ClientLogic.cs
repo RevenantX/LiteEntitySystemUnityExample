@@ -124,7 +124,8 @@ C_LerpBufferTime: {_entityManager.LerpBufferTimeLength}
 Jitter: {_entityManager.NetworkJitter}
 Ping: {_ping}
 IN: {BytesInPerSecond/1000f} KB/s({PacketsInPerSecond})
-OUT: {BytesOutPerSecond/1000f} KB/s({PacketsOutPerSecond})";
+OUT: {BytesOutPerSecond/1000f} KB/s({PacketsOutPerSecond})
+PendingRemove: {_entityManager.PendingToRemoveEntites}";
             }
             else
             {

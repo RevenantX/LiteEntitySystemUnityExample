@@ -162,8 +162,6 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
         {
             Debug.Log("[C] Connected to server: " + peer);
             _server = peer;
-            
-            SendPacket(new JoinPacket {UserName = _userName}, DeliveryMethod.ReliableOrdered);
 
             var typesMap = new EntityTypesMap<GameEntities>()
                 .Register(GameEntities.Player, e => new BasePlayer(e))
@@ -172,6 +170,8 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
                 .Register(GameEntities.WeaponItem, e => new WeaponItem(e))
                 .Register(GameEntities.Physics, e => new UnityPhysicsManager(e).Init(transform))
                 .Register(GameEntities.Projectile, e => new SimpleProjectile(e));
+            
+            SendPacket(new JoinPacket {UserName = _userName, GameHash = typesMap.EvaluateEntityClassDataHash()}, DeliveryMethod.ReliableOrdered);
 
             _entityManager = ClientEntityManager.Create<PlayerInputPacket>(
                 typesMap, 

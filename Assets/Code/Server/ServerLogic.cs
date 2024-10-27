@@ -17,6 +17,7 @@ namespace Code.Server
         private NetPacketProcessor _packetProcessor;
         public ushort Tick => _serverEntityManager.Tick;
         private ServerEntityManager _serverEntityManager;
+        private ulong _typesHash;
 
         static ServerLogic()
         {
@@ -52,6 +53,7 @@ namespace Code.Server
                 .Register(GameEntities.WeaponItem, e => new WeaponItem(e))
                 .Register(GameEntities.Physics, e => new UnityPhysicsManager(e).Init(transform))
                 .Register(GameEntities.Projectile, e => new SimpleProjectile(e));
+            _typesHash = typesMap.EvaluateEntityClassDataHash();
             
             _serverEntityManager = ServerEntityManager.Create<PlayerInputPacket>(
                 typesMap,
@@ -90,6 +92,13 @@ namespace Code.Server
         private void OnJoinReceived(JoinPacket joinPacket, NetPeer peer)
         {
             Debug.Log("[S] Join packet received: " + joinPacket.UserName);
+
+            if (joinPacket.GameHash != _typesHash)
+            {
+                Debug.Log("[S] Client has different code");
+                peer.Disconnect();
+                return;
+            }
             
             var serverPlayer = _serverEntityManager.AddPlayer(new LiteNetLibNetPeer(peer, true));
             var player = _serverEntityManager.AddEntity<BasePlayer>(e =>

@@ -13,6 +13,7 @@ namespace Code.Shared
     public class JoinPacket
     {
         public string UserName { get; set; }
+        public ulong GameHash { get; set; }
     }
 
     [Flags]

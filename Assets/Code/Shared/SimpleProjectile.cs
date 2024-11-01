@@ -7,23 +7,23 @@ namespace Code.Shared
 {
     public struct ProjectileInitParams
     {
-        public byte OwnerId;
+        public EntitySharedReference Player;
         public Vector2 Position;
         public Vector2 Speed;
-        public void Init(SimpleProjectile e) => e.Init(OwnerId, Position, Speed);
+        public void Init(SimpleProjectile e) => e.Init(Player, Position, Speed);
     }
     
     [EntityFlags(EntityFlags.Updateable)]
     public class SimpleProjectile : EntityLogic
     {
+        private static readonly RaycastHit2D[] RaycastHits = new RaycastHit2D[10];
+        
         [SyncVarFlags(SyncFlags.Interpolated)]
         public SyncVar<Vector2> Position;
-        public SyncVar<Vector2> ShooterPos;
         public SyncVar<Vector2> Speed;
-        public SyncVar<byte> ShooterPlayerId;
+        public SyncVar<EntitySharedReference> ShooterPlayer;
+        public SyncVar<bool> HitSomething;
         
-        private Rigidbody2D _rigidbody;
-        private BoxCollider2D _collider;
         private UnityPhysicsManager _unityPhys;
         public GameObject UnityObject;
         
@@ -39,34 +39,54 @@ namespace Code.Shared
 
         protected override void OnDestroy()
         {
-            if (!IsLocal)
+            if (!IsLocal && !HitSomething)
                 ClientLogic.Instance.SpawnHit(Position);
             Object.Destroy(UnityObject);
-            _rigidbody = null;
-            _collider = null;
         }
 
         public SimpleProjectile(EntityParams entityParams) : base(entityParams)
         {
         }
 
-        public void Init(byte playerId, Vector2 position, Vector2 speed)
+        public void Init(EntitySharedReference player, Vector2 position, Vector2 speed)
         {
             Position.Value = position;
             Speed.Value = speed;
-            ShooterPos.Value = position;
-            ShooterPlayerId.Value = playerId;
+            ShooterPlayer.Value = player;
         }
 
         protected override void Update()
         {
+            if (HitSomething)
+                return;
+            
+            EnableLagCompensationForOwner();
+            int hitsCount = _unityPhys.PhysicsScene.Raycast(
+                Position, 
+                Speed.Value.normalized,
+                Speed.Value.magnitude * EntityManager.DeltaTimeF,
+                RaycastHits);
+            DisableLagCompensationForOwner();
+            
+            for (int i = 0; i < hitsCount; i++)
+            {
+                ref var hit = ref RaycastHits[i];
+                if (hit.transform.TryGetComponent<BasePlayerView>(out var playerProxy) && playerProxy.AttachedPlayer.SharedReference != ShooterPlayer )
+                {
+                    playerProxy.AttachedPlayer.Damage(25);
+                    if (EntityManager.IsClient && EntityManager.InNormalState)
+                        ClientLogic.Instance.SpawnHit(Position);
+                    UnityObject.SetActive(false);
+                    HitSomething.Value = true;
+                    break;
+                }
+            }
+            
             Position.Value += Speed.Value * EntityManager.DeltaTimeF;
             _lifeTime -= EntityManager.DeltaTimeF;
-            if (EntityManager.IsServer && _lifeTime <= 0f)
-            {
+            
+            if (HitSomething || (EntityManager.IsServer && _lifeTime <= 0f))
                 Destroy();
-            }
-            //_rigidbody.position = Position;
         }
 
         protected override void VisualUpdate()

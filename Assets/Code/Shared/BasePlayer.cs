@@ -107,7 +107,7 @@ namespace Code.Shared
             public Vector2 Position;
         }
 
-        private void Damage(byte damage)
+        public void Damage(byte damage)
         {
             if (damage > _health)
                 _health.Value = 0;
@@ -181,7 +181,7 @@ namespace Code.Shared
                     //shoot projectile
                     var initParams = new ProjectileInitParams
                     {
-                        OwnerId = OwnerId,
+                        Player = this,
                         Position = _position,
                         Speed = new Vector2(Mathf.Cos(_rotation.Value * Mathf.Deg2Rad), Mathf.Sin(_rotation.Value * Mathf.Deg2Rad)) * 10f
                     };

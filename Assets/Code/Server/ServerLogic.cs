@@ -31,7 +31,7 @@ namespace Code.Server
             {
                 AutoRecycle = true,
                 PacketPoolSize = 1000,
-                SimulateLatency = false,
+                SimulateLatency = true,
                 SimulationMinLatency = 50,
                 SimulationMaxLatency = 60,
                 SimulatePacketLoss = false,

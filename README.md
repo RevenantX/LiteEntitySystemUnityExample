@@ -1,6 +1,10 @@
-Little game example using LiteEntitySystem and Unity. 
+# Little game example using LiteEntitySystem and Unity. 
 
-Keys:
+
+Keybindings:
+
 WASD - movement
+
 MOUSE_LEFT - shoot raytraced 
+
 MOUSE_RIGHT - shoot predicted projectile

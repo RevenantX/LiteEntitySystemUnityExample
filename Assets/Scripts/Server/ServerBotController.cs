@@ -8,7 +8,7 @@ namespace Code.Server
     public class ServerBotController : AiControllerLogic<BasePlayer>
     {
         private float _rotation;
-        private readonly SyncTimer _rotationChangeTimer = new SyncTimer(0.5f);
+        private readonly SyncTimer _rotationChangeTimer = new(0.5f);
 
         public ServerBotController(EntityParams entityParams) : base(entityParams)
         {

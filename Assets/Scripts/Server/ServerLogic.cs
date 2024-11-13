@@ -61,7 +61,7 @@ namespace Code.Server
                 NetworkGeneral.GameFPS, 
                 ServerSendRate.EqualToFPS);
 
-            _serverEntityManager.AddSignleton<UnityPhysicsManager>();
+            _serverEntityManager.AddSingleton<UnityPhysicsManager>();
 
             for (int i = 0; i < 500; i++)
             {

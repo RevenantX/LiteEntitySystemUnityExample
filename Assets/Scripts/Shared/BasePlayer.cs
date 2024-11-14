@@ -89,7 +89,7 @@ namespace Code.Shared
         {
             if (EntityManager.IsClient)
                 ClientLogic.Instance.SpawnHit(_position);
-            GameObject.Destroy(UnityObject);
+            Object.Destroy(UnityObject);
             _rigidbody = null;
             _collider = null;
         }

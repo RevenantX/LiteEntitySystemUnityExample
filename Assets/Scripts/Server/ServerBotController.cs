@@ -23,9 +23,10 @@ namespace Code.Server
                 _rotationChangeTimer.Reset(Random.Range(0.5f, 3f));
             }
             bool normalFire = Random.Range(0, 50) == 0;
+            bool secondaryFire = Random.Range(0, 100) == 0;
             ControlledEntity.SetInput(
                 normalFire,
-                false,
+                !normalFire && secondaryFire,
                 _rotation,
                 new Vector2(Mathf.Cos(_rotation * Mathf.Deg2Rad),Mathf.Sin(_rotation * Mathf.Deg2Rad)*0.1f));
         }

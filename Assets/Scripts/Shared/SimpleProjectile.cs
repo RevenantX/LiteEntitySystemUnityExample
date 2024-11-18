@@ -13,7 +13,7 @@ namespace Code.Shared
         public void Init(SimpleProjectile e) => e.Init(Player, Position, Speed);
     }
     
-    [EntityFlags(EntityFlags.Updateable)]
+    [EntityFlags(EntityFlags.UpdateOnClient)]
     public class SimpleProjectile : EntityLogic
     {
         private static readonly RaycastHit2D[] RaycastHits = new RaycastHit2D[10];
@@ -57,7 +57,7 @@ namespace Code.Shared
 
         protected override void Update()
         {
-            if (HitSomething)
+            if (HitSomething || (IsClient && IsRemoteControlled))
                 return;
             
             EnableLagCompensationForOwner();

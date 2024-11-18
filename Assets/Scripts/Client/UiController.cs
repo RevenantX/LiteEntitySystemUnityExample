@@ -20,7 +20,7 @@ namespace Code.Client
 
         public void OnHostClick()
         {
-            SceneManager.LoadScene("ServerScene",
+            SceneManager.LoadScene("Server",
                 new LoadSceneParameters(LoadSceneMode.Additive, LocalPhysicsMode.Physics2D));
             _uiObject.SetActive(false);
             _clientLogic.Connect("localhost", OnDisconnected);

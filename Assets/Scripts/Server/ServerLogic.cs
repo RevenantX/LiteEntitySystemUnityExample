@@ -135,7 +135,7 @@ namespace Code.Server
             switch ((PacketType)packetType)
             {
                 case PacketType.EntitySystem:
-                    _serverEntityManager.Deserialize((LiteNetLibNetPeer)peer.Tag, reader.AsReadOnlySpan());
+                    _serverEntityManager.Deserialize((LiteNetLibNetPeer)peer.Tag, reader.GetRemainingBytesSpan());
                     break;
                 
                 case PacketType.Serialized:

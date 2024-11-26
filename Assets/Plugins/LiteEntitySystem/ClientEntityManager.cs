@@ -95,6 +95,11 @@ namespace LiteEntitySystem
         public float NetworkJitter { get; private set; }
 
         /// <summary>
+        /// Average jitter
+        /// </summary>
+        public float AverageJitter => _jitterMiddle;
+
+        /// <summary>
         /// Preferred input and incoming states buffer length in seconds lowest bound
         /// Buffer automatically increases to Jitter time + PreferredBufferTimeLowest
         /// </summary>
@@ -169,16 +174,18 @@ namespace LiteEntitySystem
         private SyncCallInfo[] _syncCallsBeforeConstruct;
         private int _syncCallsBeforeConstructCount;
         
-        private AVLTree<InternalEntity> _entitiesToConstruct = new();
+        private readonly AVLTree<InternalEntity> _entitiesToConstruct = new();
         private ushort _lastReceivedInputTick;
         private float _logicLerpMsec;
         private ushort _lastReadyTick;
 
         //time manipulation
-        private readonly float[] _jitterSamples = new float[10];
+        private readonly float[] _jitterSamples = new float[50];
         private int _jitterSampleIdx;
         private readonly Stopwatch _jitterTimer = new();
+        private float _jitterPrevTime;
         private float _jitterMiddle;
+        private float _jitterSum;
         
         //local player
         private NetPlayer _localPlayer;
@@ -251,7 +258,7 @@ namespace LiteEntitySystem
         /// Add local entity that will be not synchronized
         /// </summary>
         /// <typeparam name="T">Entity type</typeparam>
-        /// <returns>Created entity or null if entities limit is reached (<see cref="MaxEntityCount"/>)</returns>
+        /// <returns>Created entity or null if entities limit is reached (<see cref="EntityManager.MaxEntityCount"/>)</returns>
         internal T AddLocalEntity<T>(Action<T> initMethod = null) where T : EntityLogic
         {
             if (_localIdQueue.AvailableIds == 0)
@@ -289,7 +296,12 @@ namespace LiteEntitySystem
             }
             return null;
         }
-        
+
+        internal override void EntityFieldChanged<T>(InternalEntity entity, ushort fieldId, ref T newValue)
+        {
+            //currently nothing
+        }
+
         protected override unsafe void OnAliveEntityAdded(InternalEntity entity)
         {
             ref var classData = ref ClassDataDict[entity.ClassId];
@@ -392,7 +404,13 @@ namespace LiteEntitySystem
                     }
 
                     //sample jitter
-                    _jitterSamples[_jitterSampleIdx] = _jitterTimer.ElapsedMilliseconds / 1000f;
+                    float currentJitterTimer = _jitterTimer.ElapsedMilliseconds / 1000f;
+                    ref float jitterSample = ref _jitterSamples[_jitterSampleIdx];
+                    
+                    _jitterSum -= jitterSample;
+                    jitterSample = Math.Abs(currentJitterTimer - _jitterPrevTime);
+                    _jitterSum += jitterSample;
+                    _jitterPrevTime = currentJitterTimer;
                     _jitterSampleIdx = (_jitterSampleIdx + 1) % _jitterSamples.Length;
                     //reset timer
                     _jitterTimer.Restart();
@@ -448,15 +466,9 @@ namespace LiteEntitySystem
                 return false;
             
             //get max and middle jitter
-            _jitterMiddle = 0f;
-            for (int i = 0; i < _jitterSamples.Length - 1; i++)
-            {
-                float jitter = Math.Abs(_jitterSamples[i] - _jitterSamples[i + 1]);
-                if (jitter > NetworkJitter)
-                    NetworkJitter = jitter;
-                _jitterMiddle += jitter;
-            }
-            _jitterMiddle /= _jitterSamples.Length;
+            _jitterMiddle = _jitterSum / _jitterSamples.Length;
+            if (_jitterMiddle > NetworkJitter)
+                NetworkJitter = _jitterMiddle;
             
             _stateB = _readyStates.ExtractMin();
             _stateB.Preload(EntitiesDict);

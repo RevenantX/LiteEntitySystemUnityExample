@@ -217,7 +217,7 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
             switch (pt)
             {
                 case PacketType.EntitySystem:
-                    _entityManager.Deserialize(reader.AsReadOnlySpan());
+                    _entityManager.Deserialize(reader.GetRemainingBytesSpan());
                     break;
                 
                 case PacketType.Serialized:

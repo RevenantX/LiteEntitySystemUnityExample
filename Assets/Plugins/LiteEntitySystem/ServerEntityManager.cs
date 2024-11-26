@@ -214,7 +214,7 @@ namespace LiteEntitySystem
         /// <param name="initMethod">Method that will be called after entity construction</param>
         /// <typeparam name="T">Entity type</typeparam>
         /// <returns>Created entity or null in case of limit</returns>
-        public T AddController<T>(NetPlayer owner, Action<T> initMethod = null) where T : ControllerLogic =>
+        public T AddController<T>(NetPlayer owner, Action<T> initMethod = null) where T : HumanControllerLogic =>
             Add<T>(ent =>
             {
                 ent.InternalOwnerId.Value = owner.Id;
@@ -229,7 +229,7 @@ namespace LiteEntitySystem
         /// <param name="initMethod">Method that will be called after entity construction</param>
         /// <typeparam name="T">Entity type</typeparam>
         /// <returns>Created entity or null in case of limit</returns>
-        public T AddController<T>(NetPlayer owner, PawnLogic entityToControl, Action<T> initMethod = null) where T : ControllerLogic =>
+        public T AddController<T>(NetPlayer owner, PawnLogic entityToControl, Action<T> initMethod = null) where T : HumanControllerLogic =>
             Add<T>(ent =>
             {
                 ent.InternalOwnerId.Value = owner.Id;
@@ -646,7 +646,7 @@ namespace LiteEntitySystem
             _netPlayers.GetByIndex(0).Peer.TriggerSend();
         }
         
-        internal void EntityFieldChanged<T>(InternalEntity entity, ushort fieldId, ref T newValue) where T : unmanaged
+        internal override void EntityFieldChanged<T>(InternalEntity entity, ushort fieldId, ref T newValue)
         {
             _changedEntities.Add(entity);
             _stateSerializers[entity.Id].MarkFieldChanged(fieldId, _tick, ref newValue);

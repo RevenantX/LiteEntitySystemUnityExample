@@ -1,6 +1,5 @@
 using Code.Shared;
 using LiteEntitySystem;
-using LiteEntitySystem.Extensions;
 using UnityEngine;
 
 namespace Code.Server
@@ -8,7 +7,7 @@ namespace Code.Server
     public class ServerBotController : AiControllerLogic<BasePlayer>
     {
         private float _rotation;
-        private readonly SyncTimer _rotationChangeTimer = new(0.5f);
+        private float _rotationChangeTimer = 0.5f;
 
         public ServerBotController(EntityParams entityParams) : base(entityParams)
         {
@@ -17,10 +16,11 @@ namespace Code.Server
 
         public override void BeforeControlledUpdate()
         {
-            if (_rotationChangeTimer.UpdateAndReset(EntityManager.DeltaTimeF))
+            _rotationChangeTimer -= EntityManager.DeltaTimeF;
+            if (_rotationChangeTimer < 0f)
             {
                 _rotation += Random.Range(-30f, 30f);
-                _rotationChangeTimer.Reset(Random.Range(0.5f, 3f));
+                _rotationChangeTimer = Random.Range(0.5f, 3f);
             }
             bool normalFire = Random.Range(0, 50) == 0;
             bool secondaryFire = Random.Range(0, 100) == 0;

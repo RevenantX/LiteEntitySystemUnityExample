@@ -15,6 +15,7 @@ namespace Code.Client
             var obj = Instantiate(prefab, player.UnityObject.transform);
             obj._player = player;
             var textObj = new GameObject($"text_{player.Name}_{player.Id}");
+            textObj.transform.SetParent(obj.transform);
             obj._health = textObj.AddComponent<TextMesh>();
             obj._health.characterSize = 0.3f;
             obj._health.anchor = TextAnchor.MiddleCenter;

@@ -33,7 +33,6 @@ namespace Code.Client
 
         private void Update()
         {
-            _health.transform.position = _player.Position;
             if (_lastHealth != _player.Health)
             {
                 _lastHealth = _player.Health;

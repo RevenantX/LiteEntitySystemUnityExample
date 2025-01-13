@@ -59,10 +59,13 @@ namespace Code.Shared
             _nextCommand.Rotation = rotation;
         }
 
-        protected override void ReadInput(in PlayerInputPacket input)
+        protected override void BeforeControlledUpdate()
         {
+            base.BeforeControlledUpdate();
+            
             var velocity = Vector2.zero;
 
+            var input = CurrentInput;
             if (input.Keys.HasFlagFast(MovementKeys.Up))
                 velocity.y = -1f;
             if (input.Keys.HasFlagFast(MovementKeys.Down))

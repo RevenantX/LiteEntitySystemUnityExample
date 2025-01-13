@@ -71,13 +71,13 @@ namespace LiteEntitySystem.Internal
         public readonly EntityConstructor<InternalEntity> EntityConstructor;
         public readonly BaseTypeInfo[] BaseTypes;
         public RpcFieldInfo[] RemoteCallsClient;
+        public readonly Type Type;
         
         private static readonly Type InternalEntityType = typeof(InternalEntity);
         internal static readonly Type SingletonEntityType = typeof(SingletonEntityLogic);
         private static readonly Type SyncableFieldType = typeof(SyncableField);
         private static readonly Type EntityLogicType = typeof(EntityLogic);
-
-        private readonly bool _isCreated;
+        
         private readonly Queue<byte[]> _dataCache;
         private readonly int _dataCacheSize;
         private readonly int _maxHistoryCount;
@@ -167,15 +167,11 @@ namespace LiteEntitySystem.Internal
             PredictedSize = 0;
             FixedFieldsSize = 0;
             LagCompensatedSize = 0;
-            LagCompensatedCount = 0;
             InterpolatedCount = 0;
             InterpolatedFieldsSize = 0;
-            
             RemoteCallsClient = null;
-
             ClassId = typeInfo.ClassId;
             Flags = 0;
-            
             EntityConstructor = typeInfo.Constructor;
             IsSingleton = entType.IsSubclassOf(SingletonEntityType);
             FilterId = filterId;
@@ -332,13 +328,13 @@ namespace LiteEntitySystem.Internal
                 _dataCacheSize = InterpolatedFieldsSize * 2 + PredictedSize + historySize;
                 _historyStart = InterpolatedFieldsSize * 2 + PredictedSize;
             }
-            
-            _isCreated = true;
+
+            Type = entType;
         }
 
         public void PrepareBaseTypes(Dictionary<Type, ushort> registeredTypeIds, ref ushort singletonCount, ref ushort filterCount)
         {
-            if (!_isCreated)
+            if (Type == null)
                 return;
             for (int i = 0; i < BaseTypes.Length; i++)
             {

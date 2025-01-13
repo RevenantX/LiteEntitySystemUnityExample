@@ -176,8 +176,7 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
             _entityManager = ClientEntityManager.Create<PlayerInputPacket>(
                 typesMap, 
                 new LiteNetLibNetPeer(peer, true), 
-                (byte)PacketType.EntitySystem, 
-                NetworkGeneral.GameFPS);
+                (byte)PacketType.EntitySystem);
             _entityManager.GetEntities<BasePlayer>().SubscribeToConstructed(player =>
             {
                 if (player.IsLocalControlled)

@@ -14,7 +14,7 @@ namespace Code.Server
             _rotation = Random.Range(0, 360);
         }
 
-        public override void BeforeControlledUpdate()
+        protected override void BeforeControlledUpdate()
         {
             _rotationChangeTimer -= EntityManager.DeltaTimeF;
             if (_rotationChangeTimer < 0f)

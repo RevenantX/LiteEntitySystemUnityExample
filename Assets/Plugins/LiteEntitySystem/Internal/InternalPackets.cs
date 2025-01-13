@@ -10,6 +10,7 @@ namespace LiteEntitySystem.Internal
         public byte PlayerId;
         public byte SendRate;
         public ushort Tick;
+        public byte Tickrate;
         public int OriginalLength;
     }
 
@@ -31,7 +32,7 @@ namespace LiteEntitySystem.Internal
         public ushort Tick;
     }
     
-    internal struct InputPacketHeader
+    public struct InputPacketHeader
     {
         public ushort StateA;
         public ushort StateB;

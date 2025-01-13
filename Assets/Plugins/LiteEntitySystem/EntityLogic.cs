@@ -44,30 +44,31 @@ namespace LiteEntitySystem
         public struct ChildEnumerator : IEnumerator<EntitySharedReference>
         {
             private readonly EntityLogic _parent;
-            private bool _end;
-        
+            private readonly int _lastIndex;
+            private int _index;
+
             public ChildEnumerator(EntityLogic entityLogic)
             {
                 _parent = entityLogic;
                 Current = EntitySharedReference.Empty;
-                _end = false;
+                _lastIndex = entityLogic._childsCount - 1;
+                _index = -1;
             }
         
             public bool MoveNext()
             {
-                if (_end)
+                if (_index == _lastIndex)
                     return false;
-                Current = Current == EntitySharedReference.Empty 
+                Current = _index == -1
                     ? _parent._firstChild 
                     : _parent.EntityManager.GetEntityById<EntityLogic>(Current)._nextChild.Value;
-                if (Current == EntitySharedReference.Empty)
-                    _end = true;
-                return !_end;
+                _index++;
+                return true;
             }
 
             public void Reset()
             {
-                _end = false;
+                _index = -1;
                 Current = EntitySharedReference.Empty;
             }
 
@@ -93,7 +94,14 @@ namespace LiteEntitySystem
                 for(int i = 0; i < result.Length; i++)
                 {
                     result[i] = iter;
-                    iter = _parent.EntityManager.GetEntityById<EntityLogic>(iter.Value)._nextChild;
+                    if(!_parent.EntityManager.TryGetEntityById<EntityLogic>(iter.Value, out var currentChild))
+                    {
+                        Logger.Log($"ChildIsNull: {currentChild}, childRef: {iter.Value.ToString()}, childsCount: {_parent._childsCount}, i: {i}");
+                        var corruptedResult = new EntitySharedReference[i];
+                        Array.Copy(result, corruptedResult, corruptedResult.Length);
+                        return corruptedResult;
+                    }
+                    iter = currentChild._nextChild;
                 }
                 return result;
             }
@@ -132,7 +140,7 @@ namespace LiteEntitySystem
                 return;
             
             ref var iter = ref _firstChild;
-            while (iter != EntitySharedReference.Empty)
+            for(int i = 0; i < _childsCount; i++)
             {
                 if (iter.Value == entity)
                 {
@@ -151,7 +159,7 @@ namespace LiteEntitySystem
             if (_firstChild == EntitySharedReference.Empty || entity == EntitySharedReference.Empty)
                 return;
             ref var childPtr = ref _firstChild;
-            while (childPtr != EntitySharedReference.Empty)
+            for(int i = 0; i < _childsCount; i++)
             {
                 if (childPtr.Value == entity)
                 {
@@ -233,6 +241,12 @@ namespace LiteEntitySystem
                 return entity;
             }
 
+            if (ClientManager.IsExecutingRPC)
+            {
+                Logger.LogError($"AddPredictedEntity called inside server->client RPC on client");
+                return null;
+            }
+
             if (IsRemoteControlled)
             {
                 Logger.LogError("AddPredictedEntity called on RemoteControlled");
@@ -243,10 +257,13 @@ namespace LiteEntitySystem
             {
                 //local counter here should be reset
                 ushort potentialId = _localPredictedIdCounter.Value++;
-                entity = ClientManager.FindEntityByPredictedId(ClientManager.RollBackTick, Id, potentialId) as T;
+
+                var origEnt = ClientManager.FindEntityByPredictedId(ClientManager.RollBackTick, Id, potentialId);
+                entity = origEnt as T;
                 if (entity == null)
                 {
-                    Logger.LogWarning("Misspredicted entity add?");
+                    Logger.LogWarning($"Requested RbTick{ClientManager.RollBackTick}, ParentId: {Id}, potentialId: {potentialId}, requestedType: {typeof(T)}, foundType: {origEnt?.GetType()}");
+                    Logger.LogWarning($"Misspredicted entity add? RbTick: {ClientManager.RollBackTick}, potentialId: {potentialId}");
                 }
                 else
                 {
@@ -359,26 +376,23 @@ namespace LiteEntitySystem
                 return;
 
             //temporary copy childs to array because childSet can be modified inside
-            if (Childs.Count > 0)
+            if ((IsLocalControlled || IsServer) && Childs.Count > 0)
             {
                 var childsCopy = Childs.ToArray();
                 //notify child entities about parent destruction
                 foreach (var entityLogicRef in childsCopy)
                     EntityManager.GetEntityById<EntityLogic>(entityLogicRef)?.OnBeforeParentDestroy();
             }
-
             base.DestroyInternal();
-            if (EntityManager.IsClient && IsLocalControlled && !IsLocal)
+            if (IsLocalControlled || IsServer)
             {
-                ClientManager.RemoveOwned(this);
+                if (EntityManager.TryGetEntityById<EntityLogic>(_parentId, out var parent) && !parent.IsDestroyed)
+                {
+                    parent.RemoveChild(this);
+                }
+                foreach (var entityLogicRef in Childs)
+                    EntityManager.GetEntityById<EntityLogic>(entityLogicRef)?.Destroy();
             }
-            if (EntityManager.TryGetEntityById<EntityLogic>(_parentId, out var parent) && !parent.IsDestroyed)
-            {
-                parent.RemoveChild(this);
-            }
-            
-            foreach (var entityLogicRef in Childs)
-                EntityManager.GetEntityById<EntityLogic>(entityLogicRef)?.Destroy();
             _firstChild.Value = EntitySharedReference.Empty;
             _childsCount.Value = 0;
         }

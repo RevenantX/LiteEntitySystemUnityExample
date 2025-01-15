@@ -32,16 +32,20 @@ namespace Code.Shared
         protected override void OnConstructed()
         {
             _unityPhys = EntityManager.GetSingleton<UnityPhysicsManager>();
-            var prefab = Resources.Load<GameObject>(EntityManager.IsClient ? "ProjectileClient" : "ProjectileServer");
-            UnityObject = Object.Instantiate(prefab, Position.Value, Quaternion.identity, _unityPhys.Root);
-            UnityObject.name = $"Projectile_{Id}";
+            if (IsClient)
+            {
+                var prefab = Resources.Load<GameObject>("ProjectileClient");
+                UnityObject = Object.Instantiate(prefab, Position.Value, Quaternion.identity, _unityPhys.Root);
+                UnityObject.name = $"Projectile_{Id}";
+            }
         }
 
         protected override void OnDestroy()
         {
-            if (!IsLocal && !HitSomething)
+            if (IsClient && !IsLocal && !HitSomething)
                 ClientLogic.Instance.SpawnHit(Position);
-            Object.Destroy(UnityObject);
+            if(UnityObject != null)
+                Object.Destroy(UnityObject);
         }
 
         public SimpleProjectile(EntityParams entityParams) : base(entityParams)
@@ -76,7 +80,7 @@ namespace Code.Shared
                     playerProxy.AttachedPlayer.Damage(25);
                     if (EntityManager.IsClient && EntityManager.InNormalState)
                         ClientLogic.Instance.SpawnHit(Position);
-                    UnityObject.SetActive(false);
+                    UnityObject?.SetActive(false);
                     HitSomething.Value = true;
                     break;
                 }

@@ -55,7 +55,7 @@ namespace Code.Server
                 .Register(GameEntities.Projectile, e => new SimpleProjectile(e));
             _typesHash = typesMap.EvaluateEntityClassDataHash();
             
-            _serverEntityManager = ServerEntityManager.Create<PlayerInputPacket>(
+            _serverEntityManager = new ServerEntityManager(
                 typesMap,
                 (byte)PacketType.EntitySystem, 
                 NetworkGeneral.GameFPS, 

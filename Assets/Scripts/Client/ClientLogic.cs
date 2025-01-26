@@ -173,7 +173,7 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
             
             SendPacket(new JoinPacket {UserName = _userName, GameHash = typesMap.EvaluateEntityClassDataHash()}, DeliveryMethod.ReliableOrdered);
 
-            _entityManager = ClientEntityManager.Create<PlayerInputPacket>(
+            _entityManager = new ClientEntityManager(
                 typesMap, 
                 new LiteNetLibNetPeer(peer, true), 
                 (byte)PacketType.EntitySystem);

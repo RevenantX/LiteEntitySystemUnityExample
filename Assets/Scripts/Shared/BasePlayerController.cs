@@ -6,7 +6,6 @@ namespace Code.Shared
     public class BasePlayerController : HumanControllerLogic<PlayerInputPacket, BasePlayer>
     {
         private readonly Camera _mainCamera;
-        private PlayerInputPacket _nextCommand;
         
         public BasePlayerController(EntityParams entityParams) : base(entityParams)
         {
@@ -42,29 +41,29 @@ namespace Code.Shared
             Vector2 dir = mousePos - ControlledEntity.Position;
             float rotation = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
             
+            ref var nextCommand = ref ModifyPendingInput();
+            
             if(Input.GetAxis("Fire1") > 0f)
-                _nextCommand.Keys |= MovementKeys.Fire;
+                nextCommand.Keys |= MovementKeys.Fire;
             if (Input.GetMouseButton(1))
-                _nextCommand.Keys |= MovementKeys.Projectile;
+                nextCommand.Keys |= MovementKeys.Projectile;
             
             if (velocity.x < -0.5f)
-                _nextCommand.Keys |= MovementKeys.Left;
+                nextCommand.Keys |= MovementKeys.Left;
             if (velocity.x > 0.5f)
-                _nextCommand.Keys |= MovementKeys.Right;
+                nextCommand.Keys |= MovementKeys.Right;
             if (velocity.y < -0.5f)
-                _nextCommand.Keys |= MovementKeys.Up;
+                nextCommand.Keys |= MovementKeys.Up;
             if (velocity.y > 0.5f)
-                _nextCommand.Keys |= MovementKeys.Down;
+                nextCommand.Keys |= MovementKeys.Down;
 
-            _nextCommand.Rotation = rotation;
+            nextCommand.Rotation = rotation;
         }
 
         protected override void BeforeControlledUpdate()
         {
             base.BeforeControlledUpdate();
-            
             var velocity = Vector2.zero;
-
             var input = CurrentInput;
             if (input.Keys.HasFlagFast(MovementKeys.Up))
                 velocity.y = -1f;
@@ -81,12 +80,6 @@ namespace Code.Shared
                 input.Keys.HasFlagFast(MovementKeys.Projectile),
                 input.Rotation,
                 velocity);
-        }
-
-        protected override void GenerateInput(out PlayerInputPacket input)
-        {
-            input = _nextCommand;
-            _nextCommand.Keys = 0;
         }
     }
 }

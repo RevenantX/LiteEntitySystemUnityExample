@@ -500,19 +500,16 @@ namespace LiteEntitySystem
             foreach (var entity in _predictedEntities)
             {
                 ref var classData = ref ClassDataDict[entity.ClassId];
-                if(entity.IsRemoteControlled && !classData.HasRemoteRollbackFields)
+                var rollbackFields = classData.GetRollbackFields(entity.IsLocalControlled);
+                if(rollbackFields == null || rollbackFields.Length == 0)
                     continue;
                 entity.OnBeforeRollback();
 
                 fixed (byte* predictedData = classData.ClientPredictedData(entity))
                 {
-                    for (int i = 0; i < classData.FieldsCount; i++)
+                    for (int i = 0; i < rollbackFields.Length; i++)
                     {
-                        ref var field = ref classData.Fields[i];
-                        if ((entity.IsRemoteControlled && !field.Flags.HasFlagFast(SyncFlags.AlwaysRollback)) ||
-                            field.Flags.HasFlagFast(SyncFlags.NeverRollBack) ||
-                            field.Flags.HasFlagFast(SyncFlags.OnlyForOtherPlayers))
-                            continue;
+                        ref var field = ref rollbackFields[i];
                         if (field.FieldType == FieldType.SyncableSyncVar)
                         {
                             var syncableField = RefMagic.RefFieldValue<SyncableField>(entity, field.Offset);

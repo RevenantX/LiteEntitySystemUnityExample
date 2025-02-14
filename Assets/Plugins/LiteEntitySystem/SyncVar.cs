@@ -4,16 +4,62 @@ using LiteEntitySystem.Internal;
 
 namespace LiteEntitySystem
 {
+    /// <summary>
+    /// Synchronization flags. 
+    /// </summary>
     [Flags]
     public enum SyncFlags : byte
     {
         None                = 0,
+        
+        /// <summary>
+        /// Is value interpolated inside VisualUpdate and in LagCompensation checks
+        /// best use for Position, Rotation
+        /// </summary>
         Interpolated        = 1,
+        
+        /// <summary>
+        /// Is value lag compensated (returned in history) when EnableLagCompensation called
+        /// for hit checks on server and on client in rollback state 
+        /// </summary>
         LagCompensated      = 1 << 1,
+        
+        /// <summary>
+        /// Value synchronized only for non owners
+        /// </summary>
         OnlyForOtherPlayers = 1 << 2,
+        
+        /// <summary>
+        /// Value synchronized only for owner
+        /// </summary>
         OnlyForOwner        = 1 << 3,
+        
+        /// <summary>
+        /// Always rollback value even when entity is not owned
+        /// useful for enemy health and damage prediction
+        /// </summary>
         AlwaysRollback      = 1 << 4,
+        
+        /// <summary>
+        /// Never rollback value even when entity is owned
+        /// </summary>
         NeverRollBack       = 1 << 5
+    }
+    
+    /// <summary>
+    /// BindOnChange execution order
+    /// </summary>
+    public enum OnSyncExecutionOrder
+    {
+        /// <summary>
+        /// Emit method passed to BindOnChange after entity construct
+        /// </summary>
+        AfterConstruct,
+        
+        /// <summary>
+        /// Emit method passed to BindOnChange before entity construct
+        /// </summary>
+        BeforeConstruct
     }
     
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Class)]

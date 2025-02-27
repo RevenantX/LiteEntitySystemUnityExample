@@ -1,6 +1,5 @@
 using Code.Client;
 using LiteEntitySystem;
-using LiteEntitySystem.Internal;
 using UnityEngine;
 
 namespace Code.Shared
@@ -13,7 +12,7 @@ namespace Code.Shared
         public void Init(SimpleProjectile e) => e.Init(Player, Position, Speed);
     }
     
-    [EntityFlags(EntityFlags.Updateable)]
+    [EntityFlags(EntityFlags.UpdateOnClient)]
     public class SimpleProjectile : EntityLogic
     {
         private static readonly RaycastHit2D[] RaycastHits = new RaycastHit2D[10];
@@ -31,6 +30,15 @@ namespace Code.Shared
 
         protected override void OnConstructed()
         {
+            if (!IsLocal && IsClient)
+            {
+                //Debug.Log($"Cli_Constructed At TICK: {ClientManager.ServerTick} {this}");
+            }
+            else if (IsServer)
+            {
+                //Debug.Log($"Srv_Constructed At TICK: {EntityManager.Tick} {this}");
+            }
+            
             _unityPhys = EntityManager.GetSingleton<UnityPhysicsManager>();
             if (IsClient)
             {
@@ -61,7 +69,9 @@ namespace Code.Shared
 
         protected override void Update()
         {
-            if (HitSomething)
+            //skip IsRemoteControlled because EntityFlags.UpdateOnClient
+            //but EntityFlags.UpdateOnClient needed for VisualUpdate
+            if (HitSomething || IsRemoteControlled)
                 return;
             
             EnableLagCompensationForOwner();

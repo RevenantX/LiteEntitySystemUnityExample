@@ -1,10 +1,21 @@
-# Little game example using LiteEntitySystem and Unity. 
+# LiteEntitySystem Unity Game Demo
 
+This is a simple game example using [LiteEntitySystem](https://github.com/RevenantX/LiteEntitySystem) and [LiteNetLib](https://github.com/RevenantX/LiteNetLib) with Unity.
 
-Keybindings:
+## Features
+- **Entity-based networking** powered by [LiteEntitySystem](https://github.com/RevenantX/LiteEntitySystem)
+- **Client-server communication** using [LiteNetLib](https://github.com/RevenantX/LiteNetLib)
+- **Predictive and raytraced shooting**
+- **Smooth movement synchronization**
 
-WASD - movement
+## Controls
+- **W, A, S, D** – Move character
+- **Left Mouse Button** – Fire sniper (raytraced)
+- **Right Mouse Button** – Fire pistol (predicted projectile)
 
-MOUSE_LEFT - shoot raytraced 
+## Getting Started
+1. Clone this repository and open it in Unity **2022.3.57f1**
+2. Press play
 
-MOUSE_RIGHT - shoot predicted projectile
+## License
+This project is available under the [MIT License](LICENSE).

@@ -30,15 +30,6 @@ namespace Code.Shared
 
         protected override void OnConstructed()
         {
-            if (!IsLocal && IsClient)
-            {
-                //Debug.Log($"Cli_Constructed At TICK: {ClientManager.ServerTick} {this}");
-            }
-            else if (IsServer)
-            {
-                //Debug.Log($"Srv_Constructed At TICK: {EntityManager.Tick} {this}");
-            }
-            
             _unityPhys = EntityManager.GetSingleton<UnityPhysicsManager>();
             if (IsClient)
             {
@@ -71,7 +62,7 @@ namespace Code.Shared
         {
             //skip IsRemoteControlled because EntityFlags.UpdateOnClient
             //but EntityFlags.UpdateOnClient needed for VisualUpdate
-            if (HitSomething || IsRemoteControlled)
+            if (HitSomething || (IsClient && IsRemoteControlled))
                 return;
             
             EnableLagCompensationForOwner();

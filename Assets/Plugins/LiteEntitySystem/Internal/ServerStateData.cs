@@ -125,11 +125,10 @@ namespace LiteEntitySystem.Internal
                     
                     if (!firstSync && Utils.SequenceDiff(header.Tick, minimalTick) <= 0)
                     {
-                        //Logger.Log($"Skip rpc. Entity: {rpc.EntityId}. Tick {rpc.Header.Tick} <= MinimalTick: {minimalTick}. Id: {rpc.Header.Id}.");
+                        //Logger.Log($"Skip rpc. Entity: {header.EntityId}. Tick {header.Tick} <= MinimalTick: {minimalTick}. Id: {header.Id}.");
                         continue;
                     }
-
-                    //Logger.Log($"Executing rpc. Entity: {rpc.EntityId}. Tick {rpc.Header.Tick}. Id: {rpc.Header.Id}. Type: {rpcType}");
+                    
                     var entity = entityManager.EntitiesDict[header.EntityId];
                     if (entity == null)
                     {
@@ -143,6 +142,7 @@ namespace LiteEntitySystem.Internal
                         continue;
                     }
 
+                    //Logger.Log($"Executing rpc. Entity: {header.EntityId}. Tick {header.Tick}. Id: {header.Id}. Type: SYNCABLE");
                     entityManager.CurrentRPCTick = header.Tick;
                     var syncableField = RefMagic.RefFieldValue<SyncableField>(entity, rpcFieldInfo.SyncableOffset);
                     if (syncSet.Add(syncableField))

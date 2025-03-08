@@ -418,8 +418,18 @@ namespace LiteEntitySystem
                 this,
                 ioBuffer));
             stateSerializer.Init(entity, _tick);
+            
+            //var rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
+            //ReservedRPCs.WriteNewRPC(_tick, rpcPacket);
+            //EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, ServerPlayerId);
+            
             initMethod?.Invoke(entity);
             ConstructEntity(entity);
+            
+            //rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
+            //ReservedRPCs.WriteConstructRPC(_tick, rpcPacket);
+            //EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, ServerPlayerId);
+            
             _changedEntities.Add(entity);
             
             //Debug.Log($"[SEM] Entity create. clsId: {classData.ClassId}, id: {entityId}, v: {version}");
@@ -523,6 +533,7 @@ namespace LiteEntitySystem
             for (int pidx = 0; pidx < playersCount; pidx++)
             {
                 var player = _netPlayers.GetByIndex(pidx);
+                _syncForPlayer = null;
                 
                 //lazy init
                 player.PendingRPCs ??= new Queue<RemoteCallPacket>();
@@ -532,10 +543,10 @@ namespace LiteEntitySystem
                     player.PendingRPCs.Clear();
                     
                     int originalLength = 0;
-                    SyncForPlayer = pidx;
+                    _syncForPlayer = player;
                     foreach (var e in GetEntities<InternalEntity>())
                         _stateSerializers[e.Id].MakeBaseline(player.Id, _tick, packetBuffer, ref originalLength);
-                    SyncForPlayer = 0;
+                    _syncForPlayer = null;
                     
                     int eventsOffset = originalLength;
                     foreach (var rpcNode in player.PendingRPCs)
@@ -770,23 +781,20 @@ namespace LiteEntitySystem
 
         private void EnqueueRPC(RemoteCallPacket rpc, ExecuteFlags flags, byte ownerId)
         {
-            if (SyncForPlayer != 0)
+            if (_syncForPlayer != null)
             {
-                if (_netPlayers.TryGetValue(SyncForPlayer, out var player))
-                {
-                    player.PendingRPCs.Enqueue(rpc);
-                    rpc.RefCount = 1;
-                }
+                _syncForPlayer.PendingRPCs.Enqueue(rpc);
+                rpc.RefCount = 1;
             }
             else if (flags.HasFlagFast(ExecuteFlags.SendToAll))
             {
-                for (int pidx = 0; pidx < PlayersCount; pidx++)
-                    _netPlayers.GetByIndex(pidx).PendingRPCs.Enqueue(rpc);
+                for (int i = 0; i < PlayersCount; i++)
+                    _netPlayers.GetByIndex(i).PendingRPCs.Enqueue(rpc);
                 rpc.RefCount = PlayersCount;
             }
             else if (flags.HasFlagFast(ExecuteFlags.SendToOwner))
             {
-                if (_netPlayers.TryGetValue(SyncForPlayer, out var player))
+                if (_netPlayers.TryGetValue(ownerId, out var player))
                 {
                     player.PendingRPCs.Enqueue(rpc);
                     rpc.RefCount = 1;
@@ -794,9 +802,9 @@ namespace LiteEntitySystem
             }
             else if (flags.HasFlagFast(ExecuteFlags.SendToOther))
             {
-                for (int pidx = 0; pidx < PlayersCount; pidx++)
+                for (int i = 0; i < PlayersCount; i++)
                 {
-                    var player = _netPlayers.GetByIndex(pidx);
+                    var player = _netPlayers.GetByIndex(i);
                     if(player.Id == ownerId)
                         continue;
                     player.PendingRPCs.Enqueue(rpc);
@@ -807,6 +815,6 @@ namespace LiteEntitySystem
         
         private bool _rpcSizeCalcMode;
         private int _rpcTotalSizeVariable;
-        internal int SyncForPlayer;
+        private NetPlayer _syncForPlayer;
     }
 }

@@ -18,7 +18,6 @@ namespace LiteEntitySystem.Internal
         private ushort[] _fieldChangeTicks;
         private ushort _versionChangedTick;
         private uint _fullDataSize;
-        private int _syncFrame;
         public byte NextVersion;
 
         public ushort LastChangedTick;
@@ -48,7 +47,6 @@ namespace LiteEntitySystem.Internal
         {
             _entity = e;
             NextVersion = (byte)(_entity.Version + 1);
-            _syncFrame = -1;
             _versionChangedTick = tick;
             LastChangedTick = tick;
             
@@ -75,15 +73,12 @@ namespace LiteEntitySystem.Internal
         {
             if (_entity == null)
                 return 0;
-            MakeOnSync(forTick);
+            MakeOnSync();
             return (int)_fullDataSize + sizeof(ushort);
         }
 
-        private void MakeOnSync(ushort tick)
+        private void MakeOnSync()
         {
-            if (tick == _syncFrame)
-                return;
-            _syncFrame = tick;
             try
             {
                 _entity.OnSyncRequested();
@@ -107,7 +102,7 @@ namespace LiteEntitySystem.Internal
             if (_flags.HasFlagFast(EntityFlags.OnlyForOwner) && !isOwned)
                 return;
             //don't write total size in full sync and fields
-            MakeOnSync(serverTick);
+            MakeOnSync();
             fixed (byte* lastEntityData = _latestEntityData)
                 RefMagic.CopyBlock(resultData + position, lastEntityData, _fullDataSize);
             position += (int)_fullDataSize;
@@ -158,7 +153,7 @@ namespace LiteEntitySystem.Internal
                 //also all fields
                 hasChanges = true;
                 *fieldFlagAndSize = 1;
-                MakeOnSync(serverTick);
+                MakeOnSync();
                 fixed (byte* lastEntityData = _latestEntityData)
                     RefMagic.CopyBlock(resultData + position, lastEntityData, _fullDataSize);
                 position += (int)_fullDataSize;

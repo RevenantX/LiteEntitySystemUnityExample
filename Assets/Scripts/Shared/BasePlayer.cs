@@ -62,6 +62,7 @@ namespace Code.Shared
             _collider.isTrigger = true;
             _collider.size = Vector2.one * 0.66f;
             UnityObject.AddComponent<BasePlayerView>().AttachedPlayer = this;
+            Debug.Log($"Player joined: {Name.Value}");
         }
 
         public void SetActive(bool active)

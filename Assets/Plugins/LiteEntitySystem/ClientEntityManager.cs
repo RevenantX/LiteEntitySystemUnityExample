@@ -355,7 +355,7 @@ namespace LiteEntitySystem
                             Logger.LogError("Error on decompress");
                             return DeserializeResult.Error;
                         }
-                        if (ReadEntityState(stateData, true) == false)
+                        if (ReadEntityState(stateData, 0, _stateA.Size, true) == false)
                             return DeserializeResult.Error;
                     }
 
@@ -485,9 +485,9 @@ namespace LiteEntitySystem
             _stateA = _stateB;
             _stateB = null;
             
-            //Logger.Log($"GotoState: IST: {ServerTick}, TST:{_stateA.Tick}");
+            Logger.Log($"GotoState: IST: {ServerTick}, TST:{_stateA.Tick}, RPCsSize: {_stateA.RpcsSize}");
             fixed (byte* stateData = _stateA.Data)
-                if (ReadEntityState(stateData, false) == false)
+                if (ReadEntityState(stateData, _stateA.RpcsSize, _stateA.Size, false) == false)
                     return;
             ConstructAndSync(false, minimalTick);
             
@@ -902,12 +902,12 @@ namespace LiteEntitySystem
                 ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
         }
         
-        private unsafe bool ReadEntityState(byte* rawData, bool fistSync)
+        private unsafe bool ReadEntityState(byte* rawData, int readerPosition, int size, bool fistSync)
         {
             var emptyClassData = new EntityClassData();
             _changedEntities.Clear();
-            
-            for (int readerPosition = 0; readerPosition < _stateA.Size;)
+
+            while (readerPosition < size)
             {
                 bool fullSync = true;
                 int endPos = 0;

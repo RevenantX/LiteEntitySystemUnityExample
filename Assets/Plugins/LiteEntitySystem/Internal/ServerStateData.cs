@@ -65,12 +65,16 @@ namespace LiteEntitySystem.Internal
         private byte _maxReceivedPart;
         private ushort _partMtu;
         private readonly BitArray _receivedParts = new (EntityManager.MaxParts);
+
+        private int _rpcsSize;
+        
+        public int RpcsSize => _rpcsSize;
         
         private static readonly ThreadLocal<HashSet<SyncableField>> SyncablesSet = new(()=>new HashSet<SyncableField>());
 
         public unsafe void Preload(InternalEntity[] entityDict)
         {
-            for (int bytesRead = 0; bytesRead < Size;)
+            for (int bytesRead = _rpcsSize; bytesRead < Size;)
             {
                 int initialReaderPosition = bytesRead;
                 ushort fullSyncAndTotalSize = BitConverter.ToUInt16(Data, initialReaderPosition);
@@ -276,6 +280,7 @@ namespace LiteEntitySystem.Internal
                 LastReceivedTick = lastPartData.LastReceivedTick;
                 ProcessedTick = lastPartData.LastProcessedTick;
                 BufferedInputsCount = lastPartData.BufferedInputsCount;
+                _rpcsSize = lastPartData.EventsSize;
                 //Logger.Log($"TPC: {partHeader.Part} {_partMtu}, LastReceivedTick: {LastReceivedTick}, LastProcessedTick: {ProcessedTick}");
             }
             partSize -= sizeof(DiffPartHeader);

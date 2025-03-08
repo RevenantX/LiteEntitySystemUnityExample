@@ -12,16 +12,8 @@ namespace LiteEntitySystem.Internal
     {
         public RPCHeader Header;
         public byte[] Data;
-        public RemoteCallPacket Next;
         public unsafe int TotalSize => sizeof(RPCHeader) + Header.ByteCount;
-        
-        //positive only for player
-        //negative except that player
-        public int ForPlayer;
-
-        public bool ShouldSend(byte playerId) => ForPlayer == 0 || (ForPlayer < 0 
-            ? playerId != -ForPlayer  //except
-            : playerId == ForPlayer); //only for
+        public int RefCount;
 
         public unsafe void WriteTo(byte* resultData, ref int position)
         {
@@ -31,12 +23,12 @@ namespace LiteEntitySystem.Internal
             position += sizeof(RPCHeader) + Header.ByteCount;
         }
         
-        public void Init(ushort entityId, ushort tick, ushort byteCount, ushort rpcId, int forPlayer)
+        public void Init(ushort entityId, ushort tick, ushort byteCount, ushort rpcId)
         {
+            RefCount = 0;
             Header.EntityId = entityId;
             Header.Tick = tick;
             Header.Id = rpcId;
-            ForPlayer = forPlayer;
             Header.ByteCount = byteCount;
             Utils.ResizeOrCreate(ref Data, byteCount);
         }

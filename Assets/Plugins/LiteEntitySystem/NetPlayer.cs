@@ -1,4 +1,5 @@
-﻿using LiteEntitySystem.Collections;
+﻿using System.Collections.Generic;
+using LiteEntitySystem.Collections;
 using LiteEntitySystem.Internal;
 using LiteEntitySystem.Transport;
 
@@ -39,6 +40,7 @@ namespace LiteEntitySystem
         //server only
         internal NetPlayerState State;
         internal SequenceBinaryHeap<InputInfo> AvailableInput;
+        internal Queue<RemoteCallPacket> PendingRPCs;
 
         internal NetPlayer(AbstractNetPeer peer, byte id)
         {

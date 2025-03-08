@@ -32,7 +32,7 @@ namespace LiteEntitySystem
         /// <summary>
         /// Is server->client rpc currently executing
         /// </summary>
-        public bool IsExecutingRPC { get; internal set; }
+        public bool IsExecutingRPC { get; private set; }
 
         /// <summary>
         /// Current state server tick
@@ -157,15 +157,17 @@ namespace LiteEntitySystem
             
             private readonly MethodCallDelegate _onSync;
             private readonly int _prevDataPos;
+            private readonly int _dataSize;
 
-            public SyncCallInfo(MethodCallDelegate onSync, InternalEntity entity, int prevDataPos)
+            public SyncCallInfo(MethodCallDelegate onSync, InternalEntity entity, int prevDataPos, int dataSize)
             {
+                _dataSize = dataSize;
                 _onSync = onSync;
                 Entity = entity;
                 _prevDataPos = prevDataPos;
             }
 
-            public void Execute(ServerStateData state) => _onSync(Entity, new ReadOnlySpan<byte>(state.Data, _prevDataPos, state.Size-_prevDataPos));
+            public void Execute(ServerStateData state) => _onSync(Entity, new ReadOnlySpan<byte>(state.Data, _prevDataPos, _dataSize));
         }
         private SyncCallInfo[] _syncCalls;
         private int _syncCallsCount;
@@ -310,7 +312,6 @@ namespace LiteEntitySystem
                     _entitiesToConstruct.Clear();
                     _syncCallsCount = 0;
                     //read header and decode
-                    int decodedBytes;
                     var header = *(BaselineDataHeader*)rawData;
                     if (header.OriginalLength < 0)
                         return DeserializeResult.Error;
@@ -337,27 +338,15 @@ namespace LiteEntitySystem
                     _receivedStates.Clear();
 
                     _stateA ??= _statesPool.Dequeue();
-                    _stateA.Reset(header.Tick);
-                    _stateA.Size = header.OriginalLength;
-                    _stateA.Data = new byte[header.OriginalLength];
+                    if(!_stateA.ReadBaseline(header, rawData, inData.Length))
+                        return DeserializeResult.Error;
+                    
                     InternalPlayerId = header.PlayerId;
                     _localPlayer = new NetPlayer(_netPeer, InternalPlayerId);
 
-                    fixed (byte* stateData = _stateA.Data)
-                    {
-                        decodedBytes = LZ4Codec.Decode(
-                            rawData + sizeof(BaselineDataHeader),
-                            inData.Length - sizeof(BaselineDataHeader),
-                            stateData,
-                            _stateA.Size);
-                        if (decodedBytes != header.OriginalLength)
-                        {
-                            Logger.LogError("Error on decompress");
-                            return DeserializeResult.Error;
-                        }
-                        if (ReadEntityState(stateData, 0, _stateA.Size, true) == false)
-                            return DeserializeResult.Error;
-                    }
+    
+                    if (ReadEntityState(true) == false)
+                        return DeserializeResult.Error;
 
                     ServerTick = _stateA.Tick;
                     _lastReadyTick = ServerTick;
@@ -367,7 +356,7 @@ namespace LiteEntitySystem
                     _jitterTimer.Reset();
                     ConstructAndSync(true);
                     _entitiesToConstruct.Clear();
-                    Logger.Log($"[CEM] Got baseline sync. Assigned player id: {header.PlayerId}, Original: {decodedBytes}, Tick: {header.Tick}, SendRate: {_serverSendRate}");
+                    Logger.Log($"[CEM] Got baseline sync. Assigned player id: {header.PlayerId}, Original: {_stateA.Size}, Tick: {header.Tick}, SendRate: {_serverSendRate}");
                 }
                 else
                 {
@@ -485,10 +474,9 @@ namespace LiteEntitySystem
             _stateA = _stateB;
             _stateB = null;
             
-            Logger.Log($"GotoState: IST: {ServerTick}, TST:{_stateA.Tick}, RPCsSize: {_stateA.RpcsSize}");
-            fixed (byte* stateData = _stateA.Data)
-                if (ReadEntityState(stateData, _stateA.RpcsSize, _stateA.Size, false) == false)
-                    return;
+            //Logger.Log($"GotoState: IST: {ServerTick}, TST:{_stateA.Tick}}");
+            if (ReadEntityState(false) == false)
+                return;
             ConstructAndSync(false, minimalTick);
             
             _timer -= _lerpTime;
@@ -615,7 +603,9 @@ namespace LiteEntitySystem
             if (_stateB != null)
             {
                 ServerTick = Utils.LerpSequence(_stateA.Tick, _stateB.Tick, (float)(_timer/_lerpTime));
+                IsExecutingRPC = true;
                 _stateB.ExecuteRpcs(this, _stateA.Tick, false);
+                IsExecutingRPC = false;
             }
 
             //apply input
@@ -886,7 +876,9 @@ namespace LiteEntitySystem
             ServerTick = _stateA.Tick;
             
             //execute syncable fields first
+            IsExecutingRPC = true;
             _stateA.ExecuteSyncableRpcs(this, minimalTick, firstSync);
+            IsExecutingRPC = false;
             
             //Call construct methods
             foreach(var entity in _entitiesToConstruct)
@@ -896,18 +888,23 @@ namespace LiteEntitySystem
             ExecuteSyncCalls(_syncCalls, ref _syncCallsCount);
             
             //execute entity rpcs
+            IsExecutingRPC = true;
             _stateA.ExecuteRpcs(this, minimalTick, firstSync);
+            IsExecutingRPC = false;
             
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
                 ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
         }
         
-        private unsafe bool ReadEntityState(byte* rawData, int readerPosition, int size, bool fistSync)
+        private unsafe bool ReadEntityState(bool fistSync)
         {
             var emptyClassData = new EntityClassData();
             _changedEntities.Clear();
+            int readerPosition = _stateA.DataOffset;
 
-            while (readerPosition < size)
+            fixed (byte* rawData = _stateA.Data)
+            // ReSharper disable once BadChildStatementIndent
+            while (readerPosition < _stateA.DataOffset + _stateA.DataSize)
             {
                 bool fullSync = true;
                 int endPos = 0;
@@ -1009,7 +1006,7 @@ namespace LiteEntitySystem
                             if (field.OnSync != null)
                             {
                                 if (field.TypeProcessor.SetFromAndSync(entity, field.Offset, readDataPtr))
-                                    _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition);
+                                    _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition, field.IntSize);
                             }
                             else
                             {
@@ -1019,13 +1016,8 @@ namespace LiteEntitySystem
                         //Logger.Log($"E {entity.Id} Field updated: {field.Name}");
                         readerPosition += field.IntSize;
                     }
-                
-                if (fullSync)
-                {
-                    _stateA.ReadRPCs(rawData, ref readerPosition, new EntitySharedReference(entity.Id, entity.Version), ref classData);
-                    continue;
-                }
-                readerPosition = endPos;
+                if(!fullSync)
+                    readerPosition = endPos;
             }
             
             for(int i = 0; i < _entitiesToRemoveCount; i++)

@@ -419,15 +419,15 @@ namespace LiteEntitySystem
                 ioBuffer));
             stateSerializer.Init(entity, _tick);
             
-            //var rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
-            //ReservedRPCs.WriteNewRPC(_tick, rpcPacket);
-            //EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, ServerPlayerId);
+            var rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
+            rpcPacket.Init(entityId, _tick, (ushort)Utils.SizeOfStruct<EntityDataHeader>(), RemoteCallPacket.NewRPCId);
+            EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, ServerPlayerId);
             
             initMethod?.Invoke(entity);
             ConstructEntity(entity);
             
             //rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
-            //ReservedRPCs.WriteConstructRPC(_tick, rpcPacket);
+            //rpcPacket.Init(entityId, _tick, (ushort)Utils.SizeOfStruct<EntityDataHeader>(), RemoteCallPacket.ConstructRPCId);
             //EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, ServerPlayerId);
             
             _changedEntities.Add(entity);

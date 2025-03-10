@@ -478,7 +478,7 @@ namespace LiteEntitySystem
             return entity;
         }
 
-        protected void ConstructEntity(InternalEntity e)
+        protected internal void ConstructEntity(InternalEntity e)
         {
             ref var classData = ref ClassDataDict[e.ClassId];
             if (classData.IsSingleton)

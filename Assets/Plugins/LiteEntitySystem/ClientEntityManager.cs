@@ -875,9 +875,9 @@ namespace LiteEntitySystem
             //execute all previous rpcs
             ServerTick = _stateA.Tick;
             
-            //execute syncable fields first
+            //execute entity rpcs
             IsExecutingRPC = true;
-            _stateA.ExecuteSyncableRpcs(this, minimalTick, firstSync);
+            _stateA.ExecuteRpcs(this, minimalTick, firstSync);
             IsExecutingRPC = false;
             
             //Call construct methods
@@ -886,11 +886,6 @@ namespace LiteEntitySystem
             
             //Make OnChangeCalls after construct
             ExecuteSyncCalls(_syncCalls, ref _syncCallsCount);
-            
-            //execute entity rpcs
-            IsExecutingRPC = true;
-            _stateA.ExecuteRpcs(this, minimalTick, firstSync);
-            IsExecutingRPC = false;
             
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
                 ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);

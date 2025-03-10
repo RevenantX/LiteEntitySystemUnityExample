@@ -220,9 +220,7 @@ namespace LiteEntitySystem.Internal
             {
                 rpcCahce = new List<RpcFieldInfo>();
                 //place reserved rpcs
-                rpcCahce.Add(new RpcFieldInfo(ReservedRPCs.NewRPC));
-                rpcCahce.Add(new RpcFieldInfo(ReservedRPCs.ConstructRPC));
-                rpcCahce.Add(new RpcFieldInfo(ReservedRPCs.DeleteRPC));
+                RemoteCallPacket.InitReservedRPCs(rpcCahce);
 
                 var rpcRegistrator = new RPCRegistrator(rpcCahce, classData.Fields);
                 RegisterRPC(ref rpcRegistrator);

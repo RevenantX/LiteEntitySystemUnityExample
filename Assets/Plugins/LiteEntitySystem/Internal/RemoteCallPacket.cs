@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace LiteEntitySystem.Internal
 {
     internal struct RPCHeader
@@ -14,6 +16,17 @@ namespace LiteEntitySystem.Internal
         public byte[] Data;
         public unsafe int TotalSize => sizeof(RPCHeader) + Header.ByteCount;
         public int RefCount;
+        
+        public const int ReserverdRPCsCount = 3;
+        public const ushort NewRPCId = 0;
+        public const ushort ConstructRPCId = 1;
+        public const ushort DeleteRPCId = 2;
+
+        public static void InitReservedRPCs(List<RpcFieldInfo> rpcCahce)
+        {
+            for(int i = 0; i < ReserverdRPCsCount; i++)
+                rpcCahce.Add(new RpcFieldInfo(-1, null));
+        }
 
         public unsafe void WriteTo(byte* resultData, ref int position)
         {

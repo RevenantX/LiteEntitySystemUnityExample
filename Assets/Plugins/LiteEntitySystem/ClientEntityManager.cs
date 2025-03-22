@@ -513,7 +513,7 @@ namespace LiteEntitySystem
                         }
                         else
                         {
-                            if (field.Flags.HasFlagFast(SyncFlags.Interpolated) && writeInterpolationData)
+                            if (writeInterpolationData && field.Flags.HasFlagFast(SyncFlags.Interpolated))
                             {
                                 //this is interpolated save for future
                                 RefMagic.CopyBlock(interpDataPtr + field.FixedOffset, readDataPtr, field.Size);
@@ -556,6 +556,7 @@ namespace LiteEntitySystem
             
             _timer -= _lerpTime;
             
+            //Rollback part
             //reset owned entities
             foreach (var entity in _predictedEntities)
             {
@@ -786,7 +787,7 @@ namespace LiteEntitySystem
                 {
                     for(int i = 0; i < classData.InterpolatedCount; i++)
                     {
-                        var field = classData.Fields[i];
+                        ref var field = ref classData.Fields[i];
                         field.TypeProcessor.SetInterpolation(
                             entity,
                             field.Offset,
@@ -1012,7 +1013,7 @@ namespace LiteEntitySystem
                     }
                     else
                     {
-                        if (field.Flags.HasFlagFast(SyncFlags.Interpolated) && writeInterpolationData)
+                        if (writeInterpolationData && field.Flags.HasFlagFast(SyncFlags.Interpolated))
                         {
                             //this is interpolated save for future
                             RefMagic.CopyBlock(interpDataPtr + field.FixedOffset, readDataPtr, field.Size);

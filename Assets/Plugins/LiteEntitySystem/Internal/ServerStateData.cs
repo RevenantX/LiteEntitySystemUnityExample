@@ -28,13 +28,11 @@ namespace LiteEntitySystem.Internal
     {
         public readonly ushort EntityId;
         public readonly int Offset;
-        public readonly int Size;
 
-        public EntityDataCache(ushort entityId, int offset, int size)
+        public EntityDataCache(ushort entityId, int offset)
         {
             EntityId = entityId;
             Offset = offset;
-            Size = size;
         }
     }
 
@@ -89,38 +87,39 @@ namespace LiteEntitySystem.Internal
                 var entity = entityDict[entityId];
                 if (entity == null)
                 {
-                    Utils.ResizeIfFull(ref _nullEntitiesData, _nullEntitiesCount+1);
-                   _nullEntitiesData[_nullEntitiesCount++] = new EntityDataCache(entityId, initialReaderPosition, totalSize);
+                    Utils.ResizeIfFull(ref _nullEntitiesData, _nullEntitiesCount);
+                   _nullEntitiesData[_nullEntitiesCount++] = new EntityDataCache(entityId, initialReaderPosition);
                    //Logger.Log($"Add to pending: {entityId}");
                     continue;
                 }
             
-                PreloadInterpolation(entity, new EntityDataCache(entityId, initialReaderPosition, totalSize));
+                PreloadInterpolation(entity, initialReaderPosition);
             }
         }
 
-        private void PreloadInterpolation(InternalEntity entity, EntityDataCache entityDataCache)
+        private void PreloadInterpolation(InternalEntity entity, int offset)
         {
+            if (!entity.IsRemoteControlled)
+                return;
+            
             ref var classData = ref entity.ClassData;
-            int entityFieldsOffset = entityDataCache.Offset + StateSerializer.DiffHeaderSize;
+            if (classData.InterpolatedCount == 0)
+                return;
+            
+            int entityFieldsOffset = offset + StateSerializer.DiffHeaderSize;
             int stateReaderOffset = entityFieldsOffset + classData.FieldsFlagsSize;
 
             //preload interpolation info
-            if (entity.IsRemoteControlled && classData.InterpolatedCount > 0)
-                Utils.ResizeIfFull(ref _interpolatedCaches, _interpolatedCachesCount + classData.InterpolatedCount);
-            for (int i = 0; i < classData.FieldsCount; i++)
+            Utils.ResizeIfFull(ref _interpolatedCaches, _interpolatedCachesCount + classData.InterpolatedCount);
+            
+            //interpolated fields goes first so can skip some checks
+            for (int i = 0; i < classData.InterpolatedCount; i++)
             {
                 if (!Utils.IsBitSet(Data, entityFieldsOffset, i))
                     continue;
                 ref var field = ref classData.Fields[i];
-                if (entity.IsRemoteControlled && field.Flags.HasFlagFast(SyncFlags.Interpolated))
-                    _interpolatedCaches[_interpolatedCachesCount++] = new InterpolatedCache(entity, ref field, stateReaderOffset);
+                _interpolatedCaches[_interpolatedCachesCount++] = new InterpolatedCache(entity, ref field, stateReaderOffset);
                 stateReaderOffset += field.IntSize;
-            }
-
-            if (stateReaderOffset != entityDataCache.Offset + entityDataCache.Size)
-            {
-                Logger.LogError($"Missread! {stateReaderOffset} > {entityDataCache.Offset + entityDataCache.Size}");
             }
         }
 
@@ -134,7 +133,7 @@ namespace LiteEntitySystem.Internal
                 
                 //Logger.Log($"Read pending interpolation: {entity.Id}");
                     
-                PreloadInterpolation(entity, _nullEntitiesData[i]);
+                PreloadInterpolation(entity, _nullEntitiesData[i].Offset);
                     
                 //remove
                 _nullEntitiesData[i] = _nullEntitiesData[_nullEntitiesCount - 1];

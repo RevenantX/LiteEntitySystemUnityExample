@@ -421,14 +421,14 @@ namespace LiteEntitySystem
             
             var rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
             rpcPacket.Init(entityId, _tick, (ushort)Utils.SizeOfStruct<EntityDataHeader>(), RemoteCallPacket.NewRPCId);
-            EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, ServerPlayerId);
+            EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, entity.InternalOwnerId);
             
             initMethod?.Invoke(entity);
             ConstructEntity(entity);
             
-            //rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
-            //rpcPacket.Init(entityId, _tick, (ushort)Utils.SizeOfStruct<EntityDataHeader>(), RemoteCallPacket.ConstructRPCId);
-            //EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, ServerPlayerId);
+            rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
+            rpcPacket.Init(entityId, _tick, 0, RemoteCallPacket.ConstructRPCId);
+            EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, entity.InternalOwnerId);
             
             _changedEntities.Add(entity);
             

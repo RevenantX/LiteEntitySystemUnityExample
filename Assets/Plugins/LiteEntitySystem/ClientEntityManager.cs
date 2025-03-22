@@ -693,19 +693,8 @@ namespace LiteEntitySystem
                 
                 if (_stateB != null)
                 {
-                    //remote interpolation
                     _logicLerpMsec = (float)(_timer/_lerpTime);
-                    for(int i = 0; i < _stateB.InterpolatedCachesCount; i++)
-                    {
-                        ref var interpolatedCache = ref _stateB.InterpolatedCaches[i];
-                        fixed (byte* initialDataPtr = interpolatedCache.Entity.ClassData.ClientInterpolatedNextData(interpolatedCache.Entity), nextDataPtr = _stateB.Data)
-                            interpolatedCache.TypeProcessor.SetInterpolation(
-                                interpolatedCache.Entity, 
-                                interpolatedCache.FieldOffset,
-                                initialDataPtr + interpolatedCache.FieldFixedOffset,
-                                nextDataPtr + interpolatedCache.StateReaderOffset, 
-                                _logicLerpMsec);
-                    }
+                    _stateB.RemoteInterpolation(EntitiesDict, _logicLerpMsec);
                 }
             }
 
@@ -946,7 +935,7 @@ namespace LiteEntitySystem
                         _entitiesToConstruct.Add(entity);
                         writeInterpolationData = true;
                     }
-                    else //update "old"
+                    else if (entity != null)
                     {
                         classData = ref entity.ClassData;
                         writeInterpolationData = entity.IsRemoteControlled;

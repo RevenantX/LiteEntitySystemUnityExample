@@ -24,16 +24,35 @@ namespace LiteEntitySystem.Internal
         }
     }
 
+    internal readonly struct EntityDataCache
+    {
+        public readonly ushort EntityId;
+        public readonly int Offset;
+        public readonly int Size;
+        public readonly bool FullSync;
+
+        public EntityDataCache(ushort entityId, int offset, int size, bool fullSync)
+        {
+            EntityId = entityId;
+            Offset = offset;
+            Size = size;
+            FullSync = fullSync;
+        }
+    }
+
     internal class ServerStateData
     {
+        private const int DefaultCacheSize = 32;
+        
         public byte[] Data = new byte[1500];
         public int Size;
         public ushort Tick;
         public ushort ProcessedTick;
         public ushort LastReceivedTick;
         public byte BufferedInputsCount;
-        public int InterpolatedCachesCount;
-        public InterpolatedCache[] InterpolatedCaches = new InterpolatedCache[32];
+        
+        private int _interpolatedCachesCount;
+        private InterpolatedCache[] _interpolatedCaches = new InterpolatedCache[DefaultCacheSize];
         
         private int _totalPartsCount;
         private int _receivedPartsCount;
@@ -45,6 +64,9 @@ namespace LiteEntitySystem.Internal
         private int _dataSize;
         private int _rpcReadPos;
         private int _rpcEndPos;
+
+        private EntityDataCache[] _nullEntitiesData = new EntityDataCache[DefaultCacheSize];
+        private int _nullEntitiesCount;
         
         public int DataOffset => _dataOffset;
         public int DataSize => _dataSize;
@@ -67,40 +89,75 @@ namespace LiteEntitySystem.Internal
                     Logger.LogError($"[CEM] Invalid entity id: {entityId}");
                     return;
                 }
-      
-                //it should be here at preload
+                
                 var entity = entityDict[entityId];
                 if (entity == null)
                 {
-                    //Removed entity
-                    //Logger.LogError($"Preload entity: {preloadData.EntityId} == null");
+                    Utils.ResizeIfFull(ref _nullEntitiesData, _nullEntitiesCount+1);
+                   _nullEntitiesData[_nullEntitiesCount++] = new EntityDataCache(entityId, initialReaderPosition, totalSize, fullSync);
+                   //Logger.Log($"Add to pending: {entityId}");
                     continue;
                 }
+            
+                PreloadInterpolation(entity, new EntityDataCache(entityId, initialReaderPosition, totalSize, fullSync));
+            }
+        }
 
-                ref var classData = ref entity.ClassData;
-                int entityFieldsOffset = initialReaderPosition + StateSerializer.DiffHeaderSize;
-                int stateReaderOffset = fullSync 
-                    ? initialReaderPosition + StateSerializer.HeaderSize + sizeof(ushort) 
-                    : entityFieldsOffset + classData.FieldsFlagsSize;
+        private void PreloadInterpolation(InternalEntity entity, EntityDataCache entityDataCache)
+        {
+            ref var classData = ref entity.ClassData;
+            int entityFieldsOffset = entityDataCache.Offset + StateSerializer.DiffHeaderSize;
+            int stateReaderOffset = entityDataCache.FullSync 
+                ? entityDataCache.Offset + StateSerializer.HeaderSize + sizeof(ushort) 
+                : entityFieldsOffset + classData.FieldsFlagsSize;
 
-                //preload interpolation info
-                if (entity.IsRemoteControlled && classData.InterpolatedCount > 0)
-                    Utils.ResizeIfFull(ref InterpolatedCaches, InterpolatedCachesCount + classData.InterpolatedCount);
-                for (int i = 0; i < classData.FieldsCount; i++)
-                {
-                    if (!fullSync && !Utils.IsBitSet(Data, entityFieldsOffset, i))
-                        continue;
-                    ref var field = ref classData.Fields[i];
-                    if (entity.IsRemoteControlled && field.Flags.HasFlagFast(SyncFlags.Interpolated))
-                        InterpolatedCaches[InterpolatedCachesCount++] = new InterpolatedCache(entity, ref field, stateReaderOffset);
-                    stateReaderOffset += field.IntSize;
-                }
+            //preload interpolation info
+            if (entity.IsRemoteControlled && classData.InterpolatedCount > 0)
+                Utils.ResizeIfFull(ref _interpolatedCaches, _interpolatedCachesCount + classData.InterpolatedCount);
+            for (int i = 0; i < classData.FieldsCount; i++)
+            {
+                if (!entityDataCache.FullSync && !Utils.IsBitSet(Data, entityFieldsOffset, i))
+                    continue;
+                ref var field = ref classData.Fields[i];
+                if (entity.IsRemoteControlled && field.Flags.HasFlagFast(SyncFlags.Interpolated))
+                    _interpolatedCaches[_interpolatedCachesCount++] = new InterpolatedCache(entity, ref field, stateReaderOffset);
+                stateReaderOffset += field.IntSize;
+            }
 
-                if (stateReaderOffset != initialReaderPosition + totalSize)
-                {
-                    Logger.LogError($"Missread! {stateReaderOffset} > {initialReaderPosition + totalSize}");
-                    return;
-                }
+            if (stateReaderOffset != entityDataCache.Offset + entityDataCache.Size)
+            {
+                Logger.LogError($"Missread! {stateReaderOffset} > {entityDataCache.Offset + entityDataCache.Size}");
+            }
+        }
+
+        public unsafe void RemoteInterpolation(InternalEntity[] entityDict, float logicLerpMsec)
+        {
+            for (int i = 0; i < _nullEntitiesCount; i++)
+            {
+                var entity = entityDict[_nullEntitiesData[i].EntityId];
+                if (entity == null) 
+                    continue;
+                
+                //Logger.Log($"Read pending interpolation: {entity.Id}");
+                    
+                PreloadInterpolation(entity, _nullEntitiesData[i]);
+                    
+                //remove
+                _nullEntitiesData[i] = _nullEntitiesData[_nullEntitiesCount - 1];
+                _nullEntitiesCount--;
+                i--;
+            }
+            
+            for(int i = 0; i < _interpolatedCachesCount; i++)
+            {
+                ref var interpolatedCache = ref _interpolatedCaches[i];
+                fixed (byte* initialDataPtr = interpolatedCache.Entity.ClassData.ClientInterpolatedNextData(interpolatedCache.Entity), nextDataPtr = Data)
+                    interpolatedCache.TypeProcessor.SetInterpolation(
+                        interpolatedCache.Entity, 
+                        interpolatedCache.FieldOffset,
+                        initialDataPtr + interpolatedCache.FieldFixedOffset,
+                        nextDataPtr + interpolatedCache.StateReaderOffset, 
+                        logicLerpMsec);
             }
         }
         
@@ -211,12 +268,13 @@ namespace LiteEntitySystem.Internal
         {
             Tick = tick;
             _receivedParts.SetAll(false);
-            InterpolatedCachesCount = 0;
+            _interpolatedCachesCount = 0;
             _maxReceivedPart = 0;
             _receivedPartsCount = 0;
             _totalPartsCount = 0;
             Size = 0;
             _partMtu = 0;
+            _nullEntitiesCount = 0;
         }
 
         public unsafe bool ReadBaseline(BaselineDataHeader header, byte* rawData, int fullSize)

@@ -419,16 +419,15 @@ namespace LiteEntitySystem
                 ioBuffer));
             stateSerializer.Init(entity, _tick);
             
-            var rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
-            rpcPacket.Init(entityId, _tick, (ushort)Utils.SizeOfStruct<EntityDataHeader>(), RemoteCallPacket.NewRPCId);
-            EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, entity.InternalOwnerId);
+            //create new rpc
+            stateSerializer.MakeNewRPC();
             
+            //init and construct
             initMethod?.Invoke(entity);
             ConstructEntity(entity);
             
-            rpcPacket = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
-            rpcPacket.Init(entityId, _tick, 0, RemoteCallPacket.ConstructRPCId);
-            EnqueueRPC(rpcPacket, ExecuteFlags.SendToAll, entity.InternalOwnerId);
+            //create OnConstructed rpc
+            stateSerializer.MakeConstructedRPC();
             
             _changedEntities.Add(entity);
             
@@ -515,7 +514,7 @@ namespace LiteEntitySystem
                     
                     _rpcTotalSizeVariable = 0;
                     foreach (var e in GetEntities<InternalEntity>())
-                        maxBaseline += _stateSerializers[e.Id].GetMaximumSize(_tick);
+                        maxBaseline += _stateSerializers[e.Id].GetMaximumSize();
                     maxBaseline += _rpcTotalSizeVariable;
                     
                     if (_packetBuffer.Length < maxBaseline)
@@ -534,21 +533,16 @@ namespace LiteEntitySystem
             {
                 var player = _netPlayers.GetByIndex(pidx);
                 _syncForPlayer = null;
-                
-                //lazy init
-                player.PendingRPCs ??= new Queue<RemoteCallPacket>();
-                
                 if (player.State == NetPlayerState.RequestBaseline)
                 {
                     player.PendingRPCs.Clear();
                     
-                    int originalLength = 0;
                     _syncForPlayer = player;
                     foreach (var e in GetEntities<InternalEntity>())
-                        _stateSerializers[e.Id].MakeBaseline(player.Id, _tick, packetBuffer, ref originalLength);
+                        _stateSerializers[e.Id].MakeBaseline(player.Id, _tick);
                     _syncForPlayer = null;
                     
-                    int eventsOffset = originalLength;
+                    int originalLength = 0;
                     foreach (var rpcNode in player.PendingRPCs)
                     {
                         rpcNode.WriteTo(packetBuffer, ref originalLength);
@@ -564,8 +558,7 @@ namespace LiteEntitySystem
                         Tick = _tick,
                         PlayerId = player.Id,
                         SendRate = (byte)SendRate,
-                        Tickrate = Tickrate,
-                        EventsOffset = eventsOffset
+                        Tickrate = Tickrate
                     };
                     
                     //compress
@@ -655,15 +648,19 @@ namespace LiteEntitySystem
                     //skip known
                     if (Utils.SequenceDiff(stateSerializer.LastChangedTick, player.StateATick) <= 0)
                         continue;
-                    
-                    if (stateSerializer.MakeDiff(
+
+                    _syncForPlayer = player;
+                    bool diffCreated = stateSerializer.MakeDiff(
                         player.Id,
                         _tick,
                         _minimalTick,
                         player.CurrentServerTick,
                         packetBuffer,
                         ref writePosition,
-                        playerController))
+                        playerController);
+                    _syncForPlayer = null;
+                    
+                    if (diffCreated)
                     {
                         CheckOverflowAndSend(player, header, packetBuffer, ref writePosition, maxPartSize);
                         //if request baseline break entity loop
@@ -731,10 +728,14 @@ namespace LiteEntitySystem
             _stateSerializers[entity.Id].MarkFieldChanged(fieldId, _tick, ref newValue);
         }
         
-        internal void ForceEntitySync(InternalEntity entity)
+        internal void ForceEntitySync(byte playerId, InternalEntity entity)
         {
             _changedEntities.Add(entity);
-            _stateSerializers[entity.Id].ForceFullSync(_tick);
+            _syncForPlayer = GetPlayer(playerId);
+            ref var stateSerializer = ref _stateSerializers[entity.Id];
+            stateSerializer.MakeNewRPC();
+            stateSerializer.MakeOnSync();
+            _syncForPlayer = null;
         }
         
         internal unsafe void AddRemoteCall(InternalEntity entity, ushort rpcId, ExecuteFlags flags)

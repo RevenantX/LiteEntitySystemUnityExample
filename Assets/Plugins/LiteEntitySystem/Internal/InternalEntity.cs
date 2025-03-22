@@ -104,6 +104,8 @@ namespace LiteEntitySystem.Internal
         
         internal ref EntityClassData ClassData => ref EntityManager.ClassDataDict[ClassId];
 
+        internal bool IsConstructed;
+
         /// <summary>
         /// Is entity released and not used after destroy.
         /// </summary>

@@ -480,6 +480,9 @@ namespace LiteEntitySystem
 
         protected internal void ConstructEntity(InternalEntity e)
         {
+            if (e.IsConstructed)
+                return;
+            
             ref var classData = ref ClassDataDict[e.ClassId];
             if (classData.IsSingleton)
             {
@@ -500,6 +503,7 @@ namespace LiteEntitySystem
                 if (IsEntityLagCompensated(e))
                     LagCompensatedEntities.Add((EntityLogic)e);
             }
+            e.IsConstructed = true;
             if (IsEntityAlive(classData.Flags, e))
             {
                 AliveEntities.Add(e);

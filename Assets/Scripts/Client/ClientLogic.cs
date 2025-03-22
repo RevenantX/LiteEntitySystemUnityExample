@@ -182,7 +182,7 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
                 if (player.IsLocalControlled)
                 {
                     _ourPlayer = player;
-                    ClientPlayerView.Create(_clientPlayerViewPrefab, (BasePlayerController)_ourPlayer.Controller);
+                    ClientPlayerView.Create(_clientPlayerViewPrefab, _ourPlayer);
                 }
                 else
                 {

@@ -44,7 +44,6 @@ namespace LiteEntitySystem
         private readonly Dictionary<ushort,Action<bool>> _awaitingRequests;
         
         //entities that should be resynced after diffSync (server only)
-        private readonly Dictionary<InternalEntity, ushort> _forceSyncEntities;
         private readonly SyncHashSet<EntitySharedReference> _skippedEntities = new();
         
         //input part
@@ -114,33 +113,14 @@ namespace LiteEntitySystem
         }
 
         //add to force sync list and trigger force entity sync in state serializer
-        internal void ForceSyncEntity(InternalEntity entity)
-        {
-            _forceSyncEntities[entity] = EntityManager.Tick;
-            ServerManager.ForceEntitySync(entity);
-        }
-
-        //is entity need force sync
-        internal bool IsEntityNeedForceSync(InternalEntity entity, ushort playerTick)
-        {
-            if (!_forceSyncEntities.TryGetValue(entity, out var forceSyncTick))
-                return false;
-
-            if (Utils.SequenceDiff(playerTick, forceSyncTick) >= 0)
-            {
-                _forceSyncEntities.Remove(entity);
-                return false;
-            }
-
-            return !entity.IsDestroyed;
-        }
+        internal void ForceSyncEntity(InternalEntity entity) =>
+            ServerManager.ForceEntitySync(InternalOwnerId, entity);
 
         private void OnEntityDestroyed(EntityLogic entityLogic)
         {
-            _forceSyncEntities.Remove(entityLogic);
             if (_skippedEntities.Remove(entityLogic))
             {
-                ServerManager.ForceEntitySync(entityLogic);
+                ServerManager.ForceEntitySync(InternalOwnerId, entityLogic);
             }
         }
         
@@ -153,7 +133,6 @@ namespace LiteEntitySystem
             
             if (EntityManager.IsServer)
             {
-                _forceSyncEntities = new Dictionary<InternalEntity, ushort>();
                 EntityManager.GetEntities<EntityLogic>().OnDestroyed += OnEntityDestroyed;
                 _firstFullInput = new byte[InputSize];
             }

@@ -29,14 +29,12 @@ namespace LiteEntitySystem.Internal
         public readonly ushort EntityId;
         public readonly int Offset;
         public readonly int Size;
-        public readonly bool FullSync;
 
-        public EntityDataCache(ushort entityId, int offset, int size, bool fullSync)
+        public EntityDataCache(ushort entityId, int offset, int size)
         {
             EntityId = entityId;
             Offset = offset;
             Size = size;
-            FullSync = fullSync;
         }
     }
 
@@ -78,9 +76,7 @@ namespace LiteEntitySystem.Internal
             for (int bytesRead = _dataOffset; bytesRead < _dataOffset + _dataSize;)
             {
                 int initialReaderPosition = bytesRead;
-                ushort fullSyncAndTotalSize = BitConverter.ToUInt16(Data, initialReaderPosition);
-                bool fullSync = (fullSyncAndTotalSize & 1) == 1;
-                int totalSize = fullSyncAndTotalSize >> 1;
+                int totalSize = BitConverter.ToUInt16(Data, initialReaderPosition);
                 bytesRead += totalSize;
                 ushort entityId = BitConverter.ToUInt16(Data, initialReaderPosition + sizeof(ushort));
                 if (entityId == EntityManager.InvalidEntityId || entityId >= EntityManager.MaxSyncedEntityCount)
@@ -94,12 +90,12 @@ namespace LiteEntitySystem.Internal
                 if (entity == null)
                 {
                     Utils.ResizeIfFull(ref _nullEntitiesData, _nullEntitiesCount+1);
-                   _nullEntitiesData[_nullEntitiesCount++] = new EntityDataCache(entityId, initialReaderPosition, totalSize, fullSync);
+                   _nullEntitiesData[_nullEntitiesCount++] = new EntityDataCache(entityId, initialReaderPosition, totalSize);
                    //Logger.Log($"Add to pending: {entityId}");
                     continue;
                 }
             
-                PreloadInterpolation(entity, new EntityDataCache(entityId, initialReaderPosition, totalSize, fullSync));
+                PreloadInterpolation(entity, new EntityDataCache(entityId, initialReaderPosition, totalSize));
             }
         }
 
@@ -107,16 +103,14 @@ namespace LiteEntitySystem.Internal
         {
             ref var classData = ref entity.ClassData;
             int entityFieldsOffset = entityDataCache.Offset + StateSerializer.DiffHeaderSize;
-            int stateReaderOffset = entityDataCache.FullSync 
-                ? entityDataCache.Offset + StateSerializer.HeaderSize + sizeof(ushort) 
-                : entityFieldsOffset + classData.FieldsFlagsSize;
+            int stateReaderOffset = entityFieldsOffset + classData.FieldsFlagsSize;
 
             //preload interpolation info
             if (entity.IsRemoteControlled && classData.InterpolatedCount > 0)
                 Utils.ResizeIfFull(ref _interpolatedCaches, _interpolatedCachesCount + classData.InterpolatedCount);
             for (int i = 0; i < classData.FieldsCount; i++)
             {
-                if (!entityDataCache.FullSync && !Utils.IsBitSet(Data, entityFieldsOffset, i))
+                if (!Utils.IsBitSet(Data, entityFieldsOffset, i))
                     continue;
                 ref var field = ref classData.Fields[i];
                 if (entity.IsRemoteControlled && field.Flags.HasFlagFast(SyncFlags.Interpolated))
@@ -178,8 +172,6 @@ namespace LiteEntitySystem.Internal
                     }
                     
                     var header = *(RPCHeader*)(rawData + _rpcReadPos);
-                    int rpcDataStart = _rpcReadPos + sizeof(RPCHeader);
-                    
                     if (!firstSync)
                     {
                         if (Utils.SequenceDiff(header.Tick, entityManager.ServerTick) > 0)
@@ -196,6 +188,7 @@ namespace LiteEntitySystem.Internal
                         }
                     }
                     
+                    int rpcDataStart = _rpcReadPos + sizeof(RPCHeader);
                     _rpcReadPos += header.ByteCount + sizeof(RPCHeader);
 
                     //Logger.Log($"Executing rpc. Entity: {rpc.EntityId}. Tick {rpc.Header.Tick}. Id: {rpc.Header.Id}. Type: {rpcType}");
@@ -204,14 +197,12 @@ namespace LiteEntitySystem.Internal
                     {
                         if (header.Id == RemoteCallPacket.NewRPCId)
                         {
-                            Logger.Log("NewRPC");
+                            entityManager.ReadNewRPC(rawData, rpcDataStart, header.ByteCount);
                             continue;
                         }
-                        else
-                        {
-                            Logger.LogError($"Entity is null: {header.EntityId}");
-                            continue;
-                        }
+   
+                        Logger.LogError($"Entity is null: {header.EntityId}");
+                        continue;
                     }
                     
                     entityManager.CurrentRPCTick = header.Tick;
@@ -223,12 +214,12 @@ namespace LiteEntitySystem.Internal
                         {
                             if (header.Id == RemoteCallPacket.NewRPCId)
                             {
-                                Logger.Log("NewRPC when entity created???");
+                                //Logger.Log("NewRPC when entity created???");
                             }
                             else if (header.Id == RemoteCallPacket.ConstructRPCId)
                             {
-                                Logger.Log("ConstructRPC");
-                                //entityManager.ConstructEntity(entity);
+                                //Logger.Log("ConstructRPC");
+                                entityManager.ConstructEntity(entity);
                             }
                             else if (header.Id == RemoteCallPacket.DeleteRPCId)
                             {
@@ -283,8 +274,8 @@ namespace LiteEntitySystem.Internal
             Size = header.OriginalLength;
             Data = new byte[header.OriginalLength];
             _dataOffset = 0;
-            _dataSize = header.EventsOffset;
-            _rpcReadPos = header.EventsOffset;
+            _dataSize = 0;
+            _rpcReadPos = 0;
             _rpcEndPos = Size;
             fixed (byte* stateData = Data)
             {

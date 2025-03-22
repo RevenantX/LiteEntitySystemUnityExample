@@ -53,13 +53,6 @@ namespace LiteEntitySystem.Internal
             fixed (byte* data = _latestEntityData)
                 *(EntityDataHeader*)data = _entity.DataHeader;
         }
-
-        public void ForceFullSync(ushort tick)
-        {
-            LastChangedTick = tick;
-            for (int i = 0; i < _fieldsCount; i++)
-                _fieldChangeTicks[i] = tick;
-        }
         
         public unsafe void MarkFieldChanged<T>(ushort fieldId, ushort tick, ref T newValue) where T : unmanaged
         {
@@ -69,15 +62,23 @@ namespace LiteEntitySystem.Internal
                 *(T*)data = newValue;
         }
 
-        public int GetMaximumSize(ushort forTick)
-        {
-            if (_entity == null)
-                return 0;
-            MakeOnSync();
-            return (int)_fullDataSize + sizeof(ushort);
-        }
+        public int GetMaximumSize() =>
+            _entity == null ? 0 : (int)_fullDataSize + sizeof(ushort);
 
-        private void MakeOnSync()
+        public void MakeNewRPC() =>
+            _entity.ServerManager.AddRemoteCall(
+                _entity,
+                new ReadOnlySpan<byte>(_latestEntityData, 0, (int)_fullDataSize),
+                RemoteCallPacket.NewRPCId,
+                ExecuteFlags.SendToAll);
+        
+        public void MakeConstructedRPC() =>
+            _entity.ServerManager.AddRemoteCall(
+                _entity,
+                RemoteCallPacket.ConstructRPCId,
+                ExecuteFlags.SendToAll);
+
+        public void MakeOnSync()
         {
             try
             {
@@ -92,8 +93,8 @@ namespace LiteEntitySystem.Internal
                 Logger.LogError($"Exception in OnSyncRequested: {e}");
             }
         }
-
-        public unsafe void MakeBaseline(byte playerId, ushort serverTick, byte* resultData, ref int position)
+        
+        public void MakeBaseline(byte playerId, ushort serverTick)
         {
             //skip inactive and other controlled controllers
             if (_entity == null || _entity.IsDestroyed)
@@ -102,10 +103,9 @@ namespace LiteEntitySystem.Internal
             if (_flags.HasFlagFast(EntityFlags.OnlyForOwner) && !isOwned)
                 return;
             //don't write total size in full sync and fields
+            MakeNewRPC();
             MakeOnSync();
-            fixed (byte* lastEntityData = _latestEntityData)
-                RefMagic.CopyBlock(resultData + position, lastEntityData, _fullDataSize);
-            position += (int)_fullDataSize;
+            MakeConstructedRPC();
             //Logger.Log($"[SEM] SendBaseline for entity: {_entity.Id}, pos: {position}, posAfterData: {position + _fullDataSize}");
         }
 
@@ -141,24 +141,12 @@ namespace LiteEntitySystem.Internal
             //make diff
             int startPos = position;
             //at 0 ushort
-            ushort* fieldFlagAndSize = (ushort*)(resultData + startPos);
+            ushort* totalSize = (ushort*)(resultData + startPos);
+            *totalSize = 0;
+            
             position += sizeof(ushort);
-            
-            bool hasChanges;
-            
-            //send full state if needed for this player (or version changed)
-            if ((playerController != null && playerController.IsEntityNeedForceSync(_entity, playerTick)) || Utils.SequenceDiff(_versionChangedTick, playerTick) > 0)
-            {
-                //write full header here (totalSize + eid)
-                //also all fields
-                hasChanges = true;
-                *fieldFlagAndSize = 1;
-                MakeOnSync();
-                fixed (byte* lastEntityData = _latestEntityData)
-                    RefMagic.CopyBlock(resultData + position, lastEntityData, _fullDataSize);
-                position += (int)_fullDataSize;
-            } 
-            else fixed (byte* lastEntityData = _latestEntityData) //make diff
+
+            fixed (byte* lastEntityData = _latestEntityData) //make diff
             {
                 //skip diff sync if disabled
                 if (playerController != null && playerController.IsEntityDiffSyncDisabled(new EntitySharedReference(_entity.Id, _entity.Version)))
@@ -172,7 +160,6 @@ namespace LiteEntitySystem.Internal
                 byte* fields = resultData + startPos + DiffHeaderSize - 1;
                 //put entity id at 2
                 *(ushort*)(resultData + position) = *(ushort*)lastEntityData;
-                *fieldFlagAndSize = 0;
                 position += sizeof(ushort) + _fieldsFlagsSize;
                 int positionBeforeDeltaCompression = position;
 
@@ -214,13 +201,11 @@ namespace LiteEntitySystem.Internal
                     //Logger.Log($"WF {_entity.GetType()} f: {_classData.Fields[i].Name}");
                 }
 
-                hasChanges = position > positionBeforeDeltaCompression;
-            }
-            
-            if (!hasChanges)
-            {
-                position = startPos;
-                return false;
+                if (position <= positionBeforeDeltaCompression)
+                {
+                    position = startPos;
+                    return false;
+                }
             }
 
             //write totalSize
@@ -232,7 +217,7 @@ namespace LiteEntitySystem.Internal
                 Logger.LogError($"Entity {_entity.Id}, Class: {_entity.ClassId} state size is more than: {MaxStateSize}");
                 return false;
             }
-            *fieldFlagAndSize |= (ushort)(resultSize << 1);
+            *totalSize = (ushort)resultSize;
             return true;
         }
     }

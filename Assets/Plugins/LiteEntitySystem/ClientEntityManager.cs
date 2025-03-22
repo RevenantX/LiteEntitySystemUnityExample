@@ -467,7 +467,7 @@ namespace LiteEntitySystem
             _stateB = null;
             
             //Logger.Log($"GotoState: IST: {ServerTick}, TST:{_stateA.Tick}}");
-            //================== ReadEntityStates ==================
+            //================== ReadEntityStates BEGIN ==================
             var emptyClassData = new EntityClassData();
             _changedEntities.Clear();
             int readerPosition = _stateA.DataOffset;
@@ -557,7 +557,7 @@ namespace LiteEntitySystem
                 _entitiesToRemove[_entitiesToRemoveCount] = null;
                 i--;
             }
-            //================== ReadEntityStates ==================
+            //================== ReadEntityStates END ====================
             ConstructAndSync(false, minimalTick);
             
             _timer -= _lerpTime;

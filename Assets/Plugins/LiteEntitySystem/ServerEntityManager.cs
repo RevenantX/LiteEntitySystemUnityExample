@@ -427,6 +427,7 @@ namespace LiteEntitySystem
             ConstructEntity(entity);
             
             //create OnConstructed rpc
+            stateSerializer.MakeOnSync();
             stateSerializer.MakeConstructedRPC();
             
             _changedEntities.Add(entity);
@@ -539,7 +540,7 @@ namespace LiteEntitySystem
                     
                     _syncForPlayer = player;
                     foreach (var e in GetEntities<InternalEntity>())
-                        _stateSerializers[e.Id].MakeBaseline(player.Id, _tick);
+                        _stateSerializers[e.Id].MakeBaseline(player.Id);
                     _syncForPlayer = null;
                     
                     int originalLength = 0;
@@ -605,6 +606,12 @@ namespace LiteEntitySystem
                 
                 foreach (var rpcNode in player.PendingRPCs)
                 {
+                    var entity = EntitiesDict[rpcNode.Header.EntityId];
+                    if (entity is EntityLogic el && playerController != null && playerController.IsEntityDiffSyncDisabled(el))
+                    {
+                        //skip disabled rpcs
+                        continue;
+                    }
                     rpcNode.WriteTo(packetBuffer, ref writePosition);
                     //Logger.Log($"[Sever] T: {Tick}, SendRPC Tick: {rpcNode.Header.Tick}, Id: {rpcNode.Header.Id}, EntityId: {rpcNode.Header.EntityId}, TypeSize: {rpcNode.Header.ByteCount}, TotalSize: {rpcNode.TotalSize}");
                 }

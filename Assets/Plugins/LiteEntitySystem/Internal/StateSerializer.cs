@@ -12,17 +12,14 @@ namespace LiteEntitySystem.Internal
         private int _fieldsCount;
         private int _fieldsFlagsSize;
         private EntityFlags _flags;
-        
         private InternalEntity _entity;
         private byte[] _latestEntityData;
         private ushort[] _fieldChangeTicks;
         private ushort _versionChangedTick;
         private uint _fullDataSize;
+        
         public byte NextVersion;
-
         public ushort LastChangedTick;
-
-        public InternalEntity Entity => _entity;
 
         public void AllocateMemory(ref EntityClassData classData, byte[] ioBuffer)
         {
@@ -94,7 +91,7 @@ namespace LiteEntitySystem.Internal
             }
         }
         
-        public void MakeBaseline(byte playerId, ushort serverTick)
+        public void MakeBaseline(byte playerId)
         {
             //skip inactive and other controlled controllers
             if (_entity == null || _entity.IsDestroyed)

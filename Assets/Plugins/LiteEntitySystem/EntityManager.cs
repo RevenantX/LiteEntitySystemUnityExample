@@ -478,7 +478,7 @@ namespace LiteEntitySystem
             return entity;
         }
 
-        protected internal void ConstructEntity(InternalEntity e)
+        protected void ConstructEntity(InternalEntity e)
         {
             if (e.IsConstructed)
                 return;

@@ -65,18 +65,13 @@ namespace LiteEntitySystem.Internal
         public void MakeNewRPC() =>
             _entity.ServerManager.AddRemoteCall(
                 _entity,
-                new ReadOnlySpan<byte>(_latestEntityData, 0, (int)_fullDataSize),
+                new ReadOnlySpan<byte>(_latestEntityData, 0, HeaderSize),
                 RemoteCallPacket.NewRPCId,
                 ExecuteFlags.SendToAll);
-        
-        public void MakeConstructedRPC() =>
-            _entity.ServerManager.AddRemoteCall(
-                _entity,
-                RemoteCallPacket.ConstructRPCId,
-                ExecuteFlags.SendToAll);
 
-        public void MakeOnSync()
+        public void MakeConstructedRPC()
         {
+            //make on sync
             try
             {
                 _entity.OnSyncRequested();
@@ -89,8 +84,15 @@ namespace LiteEntitySystem.Internal
             {
                 Logger.LogError($"Exception in OnSyncRequested: {e}");
             }
+            
+            //actual on constructed rpc
+            _entity.ServerManager.AddRemoteCall(
+                _entity,
+                new ReadOnlySpan<byte>(_latestEntityData, HeaderSize, (int)(_fullDataSize - HeaderSize)),
+                RemoteCallPacket.ConstructRPCId,
+                ExecuteFlags.SendToAll);
         }
-        
+
         public void MakeBaseline(byte playerId)
         {
             //skip inactive and other controlled controllers
@@ -101,7 +103,6 @@ namespace LiteEntitySystem.Internal
                 return;
             //don't write total size in full sync and fields
             MakeNewRPC();
-            MakeOnSync();
             MakeConstructedRPC();
             //Logger.Log($"[SEM] SendBaseline for entity: {_entity.Id}, pos: {position}, posAfterData: {position + _fullDataSize}");
         }

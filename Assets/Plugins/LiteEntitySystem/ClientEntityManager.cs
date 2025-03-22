@@ -468,7 +468,6 @@ namespace LiteEntitySystem
             
             //Logger.Log($"GotoState: IST: {ServerTick}, TST:{_stateA.Tick}}");
             //================== ReadEntityStates BEGIN ==================
-            var emptyClassData = new EntityClassData();
             _changedEntities.Clear();
             int readerPosition = _stateA.DataOffset;
 
@@ -476,8 +475,6 @@ namespace LiteEntitySystem
             // ReSharper disable once BadChildStatementIndent
             while (readerPosition < _stateA.DataOffset + _stateA.DataSize)
             {
-                ref var classData = ref emptyClassData;
-                bool writeInterpolationData;
                 ushort totalSize = *(ushort*)(rawData + readerPosition);
                 int endPos = readerPosition + totalSize;
                 readerPosition += sizeof(ushort);
@@ -486,17 +483,14 @@ namespace LiteEntitySystem
                 if (!IsEntityIdValid(entityId))
                     return;
                 var entity = EntitiesDict[entityId];
-                if(entity != null)
-                {
-                    classData = ref entity.ClassData;
-                    writeInterpolationData = entity.IsRemoteControlled;
-                    readerPosition += classData.FieldsFlagsSize;
-                }
-                else //entity null -> and diff sync -> skip
+                if(entity == null)
                 {
                     readerPosition = endPos;
                     continue;
                 }
+                ref var classData = ref entity.ClassData;
+                bool writeInterpolationData = entity.IsRemoteControlled;
+                readerPosition += classData.FieldsFlagsSize;
 
                 _changedEntities.Add(entity);
                 
@@ -925,22 +919,6 @@ namespace LiteEntitySystem
                 AliveEntities.Remove(entity);
         }
 
-        private void ExecuteSyncCalls(SyncCallInfo[] callInfos, ref int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                try
-                {
-                    callInfos[i].Execute(_stateA);
-                }
-                catch (Exception e)
-                {
-                    Logger.LogError($"OnChange error in user code. Entity: {callInfos[i].Entity}. Error: {e}");
-                }
-            }
-            count = 0;
-        }
-
         private void ConstructAndSync(bool firstSync, ushort minimalTick = 0)
         {
             //execute all previous rpcs
@@ -952,23 +930,34 @@ namespace LiteEntitySystem
             IsExecutingRPC = false;
             
             //Make OnChangeCalls after construct
-            ExecuteSyncCalls(_syncCalls, ref _syncCallsCount);
+            for (int i = 0; i < _syncCallsCount; i++)
+            {
+                try
+                {
+                    _syncCalls[i].Execute(_stateA);
+                }
+                catch (Exception e)
+                {
+                    Logger.LogError($"OnChange error in user code. Entity: {_syncCalls[i].Entity}. Error: {e}");
+                }
+            }
+            _syncCallsCount = 0;
             
+            //write initial history
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
                 ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
         }
 
-        internal unsafe void ReadNewRPC(byte* rawData, int readerPosition, int size)
+        internal unsafe void ReadNewRPC(ushort entityId, byte* rawData)
         {
             //Logger.Log("NewRPC");
-            var emptyClassData = new EntityClassData();
-            ref var classData = ref emptyClassData;
-            bool writeInterpolationData;
-            var entityDataHeader = *(EntityDataHeader*)(rawData+readerPosition);
-            readerPosition += sizeof(EntityDataHeader);
-            if (!IsEntityIdValid(entityDataHeader.Id))
+            var entityDataHeader = *(EntityDataHeader*)rawData;
+            if (!IsEntityIdValid(entityDataHeader.Id) || entityId != entityDataHeader.Id)
+            {
+                Logger.LogError($"Entity is invalid. Id {entityId}, headerId: {entityDataHeader.Id}");
                 return;
-            var entity = EntitiesDict[entityDataHeader.Id];
+            }
+            var entity = EntitiesDict[entityId];
                     
             //Logger.Log($"[CEM] ReadBaseline Entity: {entityId} pos: {bytesRead}");
             //remove old entity
@@ -982,7 +971,7 @@ namespace LiteEntitySystem
             } 
             if (entity == null) //create new
             {
-                classData = ref ClassDataDict[entityDataHeader.ClassId];
+                ref var classData = ref ClassDataDict[entityDataHeader.ClassId];
                 entity = AddEntity<InternalEntity>(new EntityParams(entityDataHeader, this, classData.AllocateDataCache()));
                      
                 if (classData.PredictedSize > 0 || classData.SyncableFields.Length > 0)
@@ -990,20 +979,25 @@ namespace LiteEntitySystem
                     _predictedEntities.Add(entity);
                     //Logger.Log($"Add predicted: {entity.GetType()}");
                 }
-                writeInterpolationData = true;
             }
-            else
+        }
+        
+        internal unsafe void ReadConstructRPC(ushort entityId, byte* rawData, int readerPosition)
+        {
+            //Logger.Log("ConstructRPC");
+            if (!IsEntityIdValid(entityId))
             {
-                classData = ref entity.ClassData;
-                writeInterpolationData = entity.IsRemoteControlled;
+                Logger.LogError($"Entity is invalid. Id {entityId}");
+                return;
             }
-            
+            var entity = EntitiesDict[entityId];
+            bool writeInterpolationData = entity.IsRemoteControlled;
+            ref var classData = ref entity.ClassData;
             _changedEntities.Add(entity);
-            
             Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
             
-            fixed (byte* interpDataPtr = classData.ClientInterpolatedNextData(entity), predictedData =
-                       classData.ClientPredictedData(entity))
+            fixed (byte* interpDataPtr = classData.ClientInterpolatedNextData(entity), 
+                   predictedData = classData.ClientPredictedData(entity))
             {
                 for (int i = 0; i < classData.FieldsCount; i++)
                 {
@@ -1040,9 +1034,10 @@ namespace LiteEntitySystem
                     readerPosition += field.IntSize;
                 }
             }
+            ConstructEntity(entity);
         }
         
-        private bool IsEntityIdValid(ushort id)
+        private static bool IsEntityIdValid(ushort id)
         {
             if (id == InvalidEntityId || id >= MaxSyncedEntityCount)
             {

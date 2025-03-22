@@ -427,7 +427,6 @@ namespace LiteEntitySystem
             ConstructEntity(entity);
             
             //create OnConstructed rpc
-            stateSerializer.MakeOnSync();
             stateSerializer.MakeConstructedRPC();
             
             _changedEntities.Add(entity);
@@ -739,9 +738,7 @@ namespace LiteEntitySystem
         {
             _changedEntities.Add(entity);
             _syncForPlayer = GetPlayer(playerId);
-            ref var stateSerializer = ref _stateSerializers[entity.Id];
-            stateSerializer.MakeNewRPC();
-            stateSerializer.MakeOnSync();
+            _stateSerializers[entity.Id].MakeConstructedRPC();
             _syncForPlayer = null;
         }
         

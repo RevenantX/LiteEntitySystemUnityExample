@@ -197,7 +197,7 @@ namespace LiteEntitySystem.Internal
                     {
                         if (header.Id == RemoteCallPacket.NewRPCId)
                         {
-                            entityManager.ReadNewRPC(rawData, rpcDataStart, header.ByteCount);
+                            entityManager.ReadNewRPC(header.EntityId, rawData + rpcDataStart);
                             continue;
                         }
    
@@ -218,8 +218,7 @@ namespace LiteEntitySystem.Internal
                             }
                             else if (header.Id == RemoteCallPacket.ConstructRPCId)
                             {
-                                //Logger.Log("ConstructRPC");
-                                entityManager.ConstructEntity(entity);
+                                entityManager.ReadConstructRPC(header.EntityId, rawData, rpcDataStart);
                             }
                             else if (header.Id == RemoteCallPacket.DeleteRPCId)
                             {

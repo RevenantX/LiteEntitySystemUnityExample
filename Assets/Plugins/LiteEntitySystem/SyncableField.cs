@@ -24,6 +24,11 @@ namespace LiteEntitySystem
         /// </summary>
         public virtual bool IsRollbackSupported => false;
 
+        /// <summary>
+        /// Owner of this syncable field
+        /// </summary>
+        protected InternalEntity ParentEntity => ParentEntityInternal;
+        
         protected internal virtual void BeforeReadRPC()
         {
             

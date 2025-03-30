@@ -91,6 +91,8 @@ namespace LiteEntitySystem.Internal
                 new ReadOnlySpan<byte>(_latestEntityData, HeaderSize, (int)(_fullDataSize - HeaderSize)),
                 RemoteCallPacket.ConstructRPCId,
                 ExecuteFlags.SendToAll);
+            
+            //Logger.Log($"Added constructed RPC: {_entity}");
         }
 
         public void MakeBaseline(byte playerId)
@@ -113,7 +115,7 @@ namespace LiteEntitySystem.Internal
             _latestEntityData = null;
         }
 
-        public unsafe bool MakeDiff(byte playerId, ushort serverTick, ushort minimalTick, ushort playerTick, byte* resultData, ref int position, HumanControllerLogic playerController)
+        public unsafe bool MakeDiff(byte playerId, ushort minimalTick, ushort playerTick, byte* resultData, ref int position, HumanControllerLogic playerController)
         {
             if (_entity == null)
             {
@@ -136,6 +138,10 @@ namespace LiteEntitySystem.Internal
             if (_flags.HasFlagFast(EntityFlags.OnlyForOwner) && !isOwned)
                 return false;
             
+            //skip diff sync if disabled
+            if (playerController != null && playerController.IsEntityDiffSyncDisabled(new EntitySharedReference(_entity.Id, _entity.Version)))
+                return false;
+            
             //make diff
             int startPos = position;
             //at 0 ushort
@@ -146,13 +152,6 @@ namespace LiteEntitySystem.Internal
 
             fixed (byte* lastEntityData = _latestEntityData) //make diff
             {
-                //skip diff sync if disabled
-                if (playerController != null && playerController.IsEntityDiffSyncDisabled(new EntitySharedReference(_entity.Id, _entity.Version)))
-                {
-                    position = startPos;
-                    return false;
-                }
-                
                 byte* entityDataAfterHeader = lastEntityData + HeaderSize;
                 // -1 for cycle
                 byte* fields = resultData + startPos + DiffHeaderSize - 1;

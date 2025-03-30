@@ -131,6 +131,7 @@ namespace LiteEntitySystem
 
         //predicted entities that should use rollback
         private readonly AVLTree<InternalEntity> _predictedEntities = new();
+        private readonly Queue<InternalEntity> _entitiesFastForwardUpdate = new();
         
         private readonly AbstractNetPeer _netPeer;
         private readonly Queue<ServerStateData> _statesPool = new(MaxSavedStateDiff);
@@ -347,7 +348,13 @@ namespace LiteEntitySystem
                         controller.ClearClientStoredInputs();
                     _storedInputHeaders.Clear();
                     _jitterTimer.Reset();
-                    ConstructAndSync(true);
+                    
+                    IsExecutingRPC = true;
+                    _stateA.ExecuteRpcs(this, 0, true);
+                    IsExecutingRPC = false;
+                    
+                    ExecuteSyncCalls();
+                    
                     Logger.Log($"[CEM] Got baseline sync. Assigned player id: {header.PlayerId}, Original: {_stateA.Size}, Tick: {header.Tick}, SendRate: {_serverSendRate}");
                 }
                 else
@@ -467,73 +474,85 @@ namespace LiteEntitySystem
             _stateB = null;
             
             //Logger.Log($"GotoState: IST: {ServerTick}, TST:{_stateA.Tick}}");
+            
             //================== ReadEntityStates BEGIN ==================
             _changedEntities.Clear();
+            ServerTick = _stateA.Tick;
+            IsExecutingRPC = true;
+            _stateA.ExecuteRpcs(this, minimalTick, false);
+            IsExecutingRPC = false;
+            
             int readerPosition = _stateA.DataOffset;
 
             fixed (byte* rawData = _stateA.Data)
-            // ReSharper disable once BadChildStatementIndent
-            while (readerPosition < _stateA.DataOffset + _stateA.DataSize)
             {
-                ushort totalSize = *(ushort*)(rawData + readerPosition);
-                int endPos = readerPosition + totalSize;
-                readerPosition += sizeof(ushort);
-                ushort entityId = *(ushort*)(rawData + readerPosition);
-                readerPosition += sizeof(ushort);
-                if (!IsEntityIdValid(entityId))
-                    return;
-                var entity = EntitiesDict[entityId];
-                if(entity == null)
+                while (readerPosition < _stateA.DataOffset + _stateA.DataSize)
                 {
-                    readerPosition = endPos;
-                    continue;
-                }
-                ref var classData = ref entity.ClassData;
-                bool writeInterpolationData = entity.IsRemoteControlled;
-                readerPosition += classData.FieldsFlagsSize;
-
-                _changedEntities.Add(entity);
-                
-                Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
-                
-                int fieldsFlagsOffset = readerPosition - classData.FieldsFlagsSize;
-                fixed (byte* interpDataPtr = classData.ClientInterpolatedNextData(entity), predictedData = classData.ClientPredictedData(entity))
-                    for (int i = 0; i < classData.FieldsCount; i++)
+                    ushort totalSize = *(ushort*)(rawData + readerPosition);
+                    int endPos = readerPosition + totalSize;
+                    readerPosition += sizeof(ushort);
+                    ushort entityId = *(ushort*)(rawData + readerPosition);
+                    readerPosition += sizeof(ushort);
+                    if (!IsEntityIdValid(entityId))
+                        return;
+                    var entity = EntitiesDict[entityId];
+                    if (entity == null)
                     {
-                        if (!Utils.IsBitSet(rawData + fieldsFlagsOffset, i))
-                            continue;
-                        ref var field = ref classData.Fields[i];
-                        byte* readDataPtr = rawData + readerPosition;
-                        if (field.IsPredicted)
-                            RefMagic.CopyBlock(predictedData + field.PredictedOffset, readDataPtr, field.Size);
-                        if (field.FieldType == FieldType.SyncableSyncVar)
+                        readerPosition = endPos;
+                        continue;
+                    }
+
+                    ref var classData = ref entity.ClassData;
+                    bool writeInterpolationData = entity.IsRemoteControlled;
+                    readerPosition += classData.FieldsFlagsSize;
+
+                    _changedEntities.Add(entity);
+
+                    Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
+
+                    int fieldsFlagsOffset = readerPosition - classData.FieldsFlagsSize;
+                    fixed (byte* interpDataPtr = classData.ClientInterpolatedNextData(entity), predictedData = classData.ClientPredictedData(entity))
+                        for (int i = 0; i < classData.FieldsCount; i++)
                         {
-                            var syncableField = RefMagic.RefFieldValue<SyncableField>(entity, field.Offset);
-                            field.TypeProcessor.SetFrom(syncableField, field.SyncableSyncVarOffset, readDataPtr);
-                        }
-                        else
-                        {
-                            if (writeInterpolationData && field.Flags.HasFlagFast(SyncFlags.Interpolated))
+                            if (!Utils.IsBitSet(rawData + fieldsFlagsOffset, i))
+                                continue;
+                            ref var field = ref classData.Fields[i];
+                            byte* readDataPtr = rawData + readerPosition;
+                            if (field.IsPredicted)
+                                RefMagic.CopyBlock(predictedData + field.PredictedOffset, readDataPtr, field.Size);
+                            if (field.FieldType == FieldType.SyncableSyncVar)
                             {
-                                //this is interpolated save for future
-                                RefMagic.CopyBlock(interpDataPtr + field.FixedOffset, readDataPtr, field.Size);
-                            }
-                            if (field.OnSync != null)
-                            {
-                                if (field.TypeProcessor.SetFromAndSync(entity, field.Offset, readDataPtr))
-                                    _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition, field.IntSize);
+                                var syncableField = RefMagic.RefFieldValue<SyncableField>(entity, field.Offset);
+                                field.TypeProcessor.SetFrom(syncableField, field.SyncableSyncVarOffset, readDataPtr);
                             }
                             else
                             {
-                                field.TypeProcessor.SetFrom(entity, field.Offset, readDataPtr);
+                                if (writeInterpolationData && field.Flags.HasFlagFast(SyncFlags.Interpolated))
+                                {
+                                    //this is interpolated save for future
+                                    RefMagic.CopyBlock(interpDataPtr + field.FixedOffset, readDataPtr, field.Size);
+                                }
+
+                                if (field.OnSync != null)
+                                {
+                                    if (field.TypeProcessor.SetFromAndSync(entity, field.Offset, readDataPtr))
+                                        _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity,
+                                            readerPosition, field.IntSize);
+                                }
+                                else
+                                {
+                                    field.TypeProcessor.SetFrom(entity, field.Offset, readDataPtr);
+                                }
                             }
+
+                            //Logger.Log($"E {entity.Id} Field updated: {field.Name}");
+                            readerPosition += field.IntSize;
                         }
-                        //Logger.Log($"E {entity.Id} Field updated: {field.Name}");
-                        readerPosition += field.IntSize;
-                    }
-                readerPosition = endPos;
+
+                    readerPosition = endPos;
+                }
             }
-            
+
             for(int i = 0; i < _entitiesToRemoveCount; i++)
             {
                 //skip changed
@@ -551,12 +570,13 @@ namespace LiteEntitySystem
                 _entitiesToRemove[_entitiesToRemoveCount] = null;
                 i--;
             }
+            
+            ExecuteSyncCalls();
             //================== ReadEntityStates END ====================
-            ConstructAndSync(false, minimalTick);
             
             _timer -= _lerpTime;
             
-            //Rollback part
+            //================== Rollback part ===========================
             //reset owned entities
             foreach (var entity in _predictedEntities)
             {
@@ -585,66 +605,13 @@ namespace LiteEntitySystem
                 for (int i = 0; i < classData.SyncableFields.Length; i++)
                     RefMagic.RefFieldValue<SyncableField>(entity, classData.SyncableFields[i].Offset).OnRollback();
                 entity.OnRollback();
+
+                if (entity.IsLocalControlled && AliveEntities.Contains(entity))
+                    _entitiesFastForwardUpdate.Enqueue(entity);
             }
 
-            //reapply input
-            UpdateMode = UpdateMode.PredictionRollback;
-            
-            for(int cmdNum = 0; cmdNum < _storedInputHeaders.Count; cmdNum++)
-            {
-                //reapply input data
-                var storedInput = _storedInputHeaders[cmdNum];
-                _localPlayer.StateATick = storedInput.Header.StateA;
-                _localPlayer.StateBTick = storedInput.Header.StateB;
-                _localPlayer.LerpTime = storedInput.Header.LerpMsec;
-                RollBackTick = storedInput.Tick;
-                foreach (var controller in GetEntities<HumanControllerLogic>())
-                    controller.ReadStoredInput(cmdNum);
-                
-                foreach (var entity in AliveEntities)
-                {
-                    if(entity.IsLocal || !entity.IsLocalControlled)
-                        continue;
-                    
-                    //if new entity set previous interp data from data that was before latest rollback update
-                    //TODO if needed
-                    /*
-                    if (cmdNum == _storedInputHeaders.Count - 1 && _entitiesToConstruct.Contains(entity))
-                    {
-                        ref var classData = ref ClassDataDict[entity.ClassId];
-                        fixed (byte* prevDataPtr = classData.ClientInterpolatedPrevData(entity))
-                        {
-                            for (int i = 0; i < classData.InterpolatedCount; i++)
-                            {
-                                ref var field = ref classData.Fields[i];
-                                field.TypeProcessor.WriteTo(entity, field.Offset, prevDataPtr + field.FixedOffset);
-                            }
-                        }
-                    }
-                    */
-                    
-                    entity.Update();
-                }
-            }
-            UpdateMode = UpdateMode.Normal;
-                        
-            //update local interpolated position
-            foreach (var entity in AliveEntities)
-            {
-                if(entity.IsLocal || !entity.IsLocalControlled)
-                    continue;
-                
-                ref var classData = ref ClassDataDict[entity.ClassId];
-                for(int i = 0; i < classData.InterpolatedCount; i++)
-                {
-                    fixed (byte* currentDataPtr = classData.ClientInterpolatedNextData(entity))
-                    {
-                        ref var field = ref classData.Fields[i];
-                        field.TypeProcessor.WriteTo(entity, field.Offset, currentDataPtr + field.FixedOffset);
-                    }
-                }
-            }
-            
+            PredictionRollback();
+
             //delete predicted
             while (_spawnPredictedEntities.TryPeek(out var info))
             {
@@ -661,6 +628,58 @@ namespace LiteEntitySystem
                     break;
                 }
             }
+        }
+
+        private unsafe void PredictionRollback()
+        {
+            //reapply input
+            UpdateMode = UpdateMode.PredictionRollback;
+            for(int cmdNum = 0; cmdNum < _storedInputHeaders.Count; cmdNum++)
+            {
+                //reapply input data
+                var storedInput = _storedInputHeaders[cmdNum];
+                _localPlayer.StateATick = storedInput.Header.StateA;
+                _localPlayer.StateBTick = storedInput.Header.StateB;
+                _localPlayer.LerpTime = storedInput.Header.LerpMsec;
+                RollBackTick = storedInput.Tick;
+                foreach (var controller in GetEntities<HumanControllerLogic>())
+                    controller.ReadStoredInput(cmdNum);
+
+                if (cmdNum == _storedInputHeaders.Count - 1)
+                {
+                    foreach (var entity in _entitiesFastForwardUpdate)
+                    {
+                        ref var classData = ref ClassDataDict[entity.ClassId];
+                        for(int i = 0; i < classData.InterpolatedCount; i++)
+                        {
+                            fixed (byte* prevDataPtr = classData.ClientInterpolatedPrevData(entity))
+                            {
+                                ref var field = ref classData.Fields[i];
+                                field.TypeProcessor.WriteTo(entity, field.Offset, prevDataPtr + field.FixedOffset);
+                            }
+                        }
+                    }
+                }
+                foreach (var entity in _entitiesFastForwardUpdate)
+                    entity.Update();
+            }
+            UpdateMode = UpdateMode.Normal;
+                        
+            //update local interpolated position
+            foreach (var entity in _entitiesFastForwardUpdate)
+            {
+                ref var classData = ref ClassDataDict[entity.ClassId];
+                for(int i = 0; i < classData.InterpolatedCount; i++)
+                {
+                    fixed (byte* currentDataPtr = classData.ClientInterpolatedNextData(entity))
+                    {
+                        ref var field = ref classData.Fields[i];
+                        field.TypeProcessor.WriteTo(entity, field.Offset, currentDataPtr + field.FixedOffset);
+                    }
+                }
+            }
+            
+            _entitiesFastForwardUpdate.Clear();
         }
 
         internal override void OnEntityDestroyed(InternalEntity e)
@@ -683,6 +702,7 @@ namespace LiteEntitySystem
                 IsExecutingRPC = true;
                 _stateB.ExecuteRpcs(this, _stateA.Tick, false);
                 IsExecutingRPC = false;
+                PredictionRollback();
             }
 
             //apply input
@@ -920,16 +940,8 @@ namespace LiteEntitySystem
                 AliveEntities.Remove(entity);
         }
 
-        private void ConstructAndSync(bool firstSync, ushort minimalTick = 0)
+        private void ExecuteSyncCalls()
         {
-            //execute all previous rpcs
-            ServerTick = _stateA.Tick;
-            
-            //execute entity rpcs
-            IsExecutingRPC = true;
-            _stateA.ExecuteRpcs(this, minimalTick, firstSync);
-            IsExecutingRPC = false;
-            
             //Make OnChangeCalls after construct
             for (int i = 0; i < _syncCallsCount; i++)
             {
@@ -943,10 +955,6 @@ namespace LiteEntitySystem
                 }
             }
             _syncCallsCount = 0;
-            
-            //write initial history
-            foreach (var lagCompensatedEntity in LagCompensatedEntities)
-                ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
         }
 
         internal unsafe void ReadNewRPC(ushort entityId, byte* rawData)
@@ -968,6 +976,7 @@ namespace LiteEntitySystem
                 Logger.Log($"[CEM] Replace entity by new: {entityDataHeader.Version}");
                 entity.DestroyInternal();
                 RemoveEntity(entity);
+                _predictedEntities.Remove(entity);
                 entity = null;
             } 
             if (entity == null) //create new
@@ -992,13 +1001,15 @@ namespace LiteEntitySystem
                 return;
             }
             var entity = EntitiesDict[entityId];
-            bool writeInterpolationData = entity.IsRemoteControlled;
+            bool isConstructed = entity.IsConstructed;
+            bool writeInterpolationData = !isConstructed || entity.IsRemoteControlled;
             ref var classData = ref entity.ClassData;
             _changedEntities.Add(entity);
             Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
             
-            fixed (byte* interpDataPtr = classData.ClientInterpolatedNextData(entity), 
-                   predictedData = classData.ClientPredictedData(entity))
+            fixed (byte* interpDataPtr = classData.ClientInterpolatedNextData(entity),
+                prevDataPtr = classData.ClientInterpolatedPrevData(entity),
+                predictedData = classData.ClientPredictedData(entity))
             {
                 for (int i = 0; i < classData.FieldsCount; i++)
                 {
@@ -1017,13 +1028,13 @@ namespace LiteEntitySystem
                         {
                             //this is interpolated save for future
                             RefMagic.CopyBlock(interpDataPtr + field.FixedOffset, readDataPtr, field.Size);
+                            RefMagic.CopyBlock(prevDataPtr + field.FixedOffset, readDataPtr, field.Size);
                         }
 
                         if (field.OnSync != null)
                         {
                             if (field.TypeProcessor.SetFromAndSync(entity, field.Offset, readDataPtr))
-                                _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition,
-                                    field.IntSize);
+                                _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition, field.IntSize);
                         }
                         else
                         {
@@ -1036,6 +1047,14 @@ namespace LiteEntitySystem
                 }
             }
             ConstructEntity(entity);
+            ExecuteSyncCalls();
+            //write initial history
+            if(entity is EntityLogic el && IsEntityLagCompensated(entity))
+                ClassDataDict[entity.ClassId].WriteHistory(el, ServerTick);
+            //if (flags.HasFlagFast(EntityFlags.Updateable) && !flags.HasFlagFast(EntityFlags.UpdateOnClient))
+            //fast forward prediction
+            if (!isConstructed && entity.IsLocalControlled && AliveEntities.Contains(entity))
+                _entitiesFastForwardUpdate.Enqueue(entity);
         }
         
         private static bool IsEntityIdValid(ushort id)

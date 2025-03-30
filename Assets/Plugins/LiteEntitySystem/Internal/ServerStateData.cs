@@ -136,8 +136,8 @@ namespace LiteEntitySystem.Internal
                 PreloadInterpolation(entity, _nullEntitiesData[i].Offset);
                     
                 //remove
-                _nullEntitiesData[i] = _nullEntitiesData[_nullEntitiesCount - 1];
                 _nullEntitiesCount--;
+                _nullEntitiesData[i] = _nullEntitiesData[_nullEntitiesCount];
                 i--;
             }
             
@@ -175,14 +175,14 @@ namespace LiteEntitySystem.Internal
                     {
                         if (Utils.SequenceDiff(header.Tick, entityManager.ServerTick) > 0)
                         {
-                            //Logger.Log($"Skip rpc. Entity: {rpc.EntityId}. Tick {rpc.Header.Tick} > ServerTick: {entityManager.ServerTick}. Id: {rpc.Header.Id}.");
+                            //Logger.Log($"Skip rpc. Entity: {header.EntityId}. Tick {header.Tick} > ServerTick: {entityManager.ServerTick}. Id: {header.Id}.");
                             return;
                         }
 
                         if (Utils.SequenceDiff(header.Tick, minimalTick) <= 0)
                         {
                             _rpcReadPos += header.ByteCount + sizeof(RPCHeader);
-                            //Logger.Log($"Skip rpc. Entity: {rpc.EntityId}. Tick {rpc.Header.Tick} <= MinimalTick: {minimalTick}. Id: {rpc.Header.Id}.");
+                            //Logger.Log($"Skip rpc. Entity: {header.EntityId}. Tick {header.Tick} <= MinimalTick: {minimalTick}. Id: {header.Id}. StateATick: {entityManager.RawServerTick}. StateBTick: {entityManager.RawTargetServerTick}");
                             continue;
                         }
                     }
@@ -190,7 +190,7 @@ namespace LiteEntitySystem.Internal
                     int rpcDataStart = _rpcReadPos + sizeof(RPCHeader);
                     _rpcReadPos += header.ByteCount + sizeof(RPCHeader);
 
-                    //Logger.Log($"Executing rpc. Entity: {rpc.EntityId}. Tick {rpc.Header.Tick}. Id: {rpc.Header.Id}. Type: {rpcType}");
+                    //Logger.Log($"Executing rpc. Entity: {header.EntityId}. Tick {header.Tick}. Id: {header.Id}");
                     var entity = entityManager.EntitiesDict[header.EntityId];
                     if (entity == null)
                     {
@@ -213,15 +213,16 @@ namespace LiteEntitySystem.Internal
                         {
                             if (header.Id == RemoteCallPacket.NewRPCId)
                             {
-                                //Logger.Log("NewRPC when entity created???");
+                                Logger.LogError("NewRPC when entity created???");
                             }
                             else if (header.Id == RemoteCallPacket.ConstructRPCId)
                             {
+                                //Logger.Log($"ConstructRPC for entity: {header.EntityId}, RpcReadPos: {_rpcReadPos}, Tick: {header.Tick}");
                                 entityManager.ReadConstructRPC(header.EntityId, rawData, rpcDataStart);
                             }
                             else if (header.Id == RemoteCallPacket.DeleteRPCId)
                             {
-                                Logger.Log("DeleteRPC");
+                                entity.DestroyInternal();
                             }
                             else
                             {

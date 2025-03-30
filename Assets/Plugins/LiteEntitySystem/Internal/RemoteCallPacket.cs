@@ -14,7 +14,6 @@ namespace LiteEntitySystem.Internal
     {
         public RPCHeader Header;
         public byte[] Data;
-        public unsafe int TotalSize => sizeof(RPCHeader) + Header.ByteCount;
         public int RefCount;
         
         public const int ReserverdRPCsCount = 3;

@@ -482,6 +482,7 @@ namespace LiteEntitySystem
         {
             if (e.IsConstructed)
                 return;
+            e.IsConstructed = true;
             
             ref var classData = ref ClassDataDict[e.ClassId];
             if (classData.IsSingleton)
@@ -503,7 +504,6 @@ namespace LiteEntitySystem
                 if (IsEntityLagCompensated(e))
                     LagCompensatedEntities.Add((EntityLogic)e);
             }
-            e.IsConstructed = true;
             if (IsEntityAlive(classData.Flags, e))
             {
                 AliveEntities.Add(e);
@@ -516,7 +516,7 @@ namespace LiteEntitySystem
             
         }
 
-        private static bool IsEntityLagCompensated(InternalEntity e)
+        protected static bool IsEntityLagCompensated(InternalEntity e)
             => !e.IsLocal && e is EntityLogic && e.ClassData.LagCompensatedCount > 0;
 
         private bool IsEntityAlive(EntityFlags flags, InternalEntity entity)

@@ -104,7 +104,10 @@ namespace LiteEntitySystem.Internal
         
         internal ref EntityClassData ClassData => ref EntityManager.ClassDataDict[ClassId];
 
-        internal bool IsConstructed;
+        /// <summary>
+        /// Is entity constructed (OnConstruct called)
+        /// </summary>
+        public bool IsConstructed { get; internal set; }
 
         /// <summary>
         /// Is entity released and not used after destroy.

@@ -248,6 +248,9 @@ namespace LiteEntitySystem
         public T AddEntity<T>(EntityLogic parent, Action<T> initMethod = null) where T : EntityLogic =>
             Add<T>(e =>
             {
+                //set parent to skip trigger
+                if(parent != null)
+                    e.InternalOwnerId.Value = parent.InternalOwnerId;
                 e.SetParent(parent);
                 initMethod?.Invoke(e);
             });
@@ -612,7 +615,7 @@ namespace LiteEntitySystem
                         continue;
                     }
                     rpcNode.WriteTo(packetBuffer, ref writePosition);
-                    //Logger.Log($"[Sever] T: {Tick}, SendRPC Tick: {rpcNode.Header.Tick}, Id: {rpcNode.Header.Id}, EntityId: {rpcNode.Header.EntityId}, TypeSize: {rpcNode.Header.ByteCount}, TotalSize: {rpcNode.TotalSize}");
+                    //Logger.Log($"[Sever] T: {Tick}, SendRPC Tick: {rpcNode.Header.Tick}, Id: {rpcNode.Header.Id}, EntityId: {rpcNode.Header.EntityId}, ByteCount: {rpcNode.Header.ByteCount}");
                 }
 
                 ushort rpcSize = (ushort)(writePosition - sizeof(DiffPartHeader));
@@ -655,18 +658,13 @@ namespace LiteEntitySystem
                     if (Utils.SequenceDiff(stateSerializer.LastChangedTick, player.StateATick) <= 0)
                         continue;
 
-                    _syncForPlayer = player;
-                    bool diffCreated = stateSerializer.MakeDiff(
+                    if (stateSerializer.MakeDiff(
                         player.Id,
-                        _tick,
                         _minimalTick,
                         player.CurrentServerTick,
                         packetBuffer,
                         ref writePosition,
-                        playerController);
-                    _syncForPlayer = null;
-                    
-                    if (diffCreated)
+                        playerController))
                     {
                         CheckOverflowAndSend(player, header, packetBuffer, ref writePosition, maxPartSize);
                         //if request baseline break entity loop

@@ -16,7 +16,7 @@ namespace Code.Shared
     public static class NetworkGeneral
     {
         public const int ProtocolId = 1;
-        public const int GameFPS = 30;
+        public const int GameFPS = 10;
         public static readonly int PacketTypesCount = Enum.GetValues(typeof(PacketType)).Length;
 
         public const int MaxGameSequence = 1024;

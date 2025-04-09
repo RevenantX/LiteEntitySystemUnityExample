@@ -45,6 +45,7 @@ namespace Code.Shared
                 var prefab = Resources.Load<GameObject>("ProjectileClient");
                 UnityObject = Object.Instantiate(prefab, Position.Value, Quaternion.identity, _unityPhys.Root);
                 UnityObject.name = $"Projectile_{Id}";
+                UnityObject.GetComponent<SpriteRenderer>().color = IsLocal ? Color.green : Color.red;
             }
         }
 
@@ -65,6 +66,7 @@ namespace Code.Shared
             Position.Value = position;
             Speed.Value = speed;
             ShooterPlayer.Value = player;
+            //Debug.Log($"Shoot: {EntityManager.Mode}, Tick: {EntityManager.Tick}");
         }
 
         protected override void Update()
@@ -105,6 +107,8 @@ namespace Code.Shared
 
         protected override void VisualUpdate()
         {
+            if(!IsLocal)
+                Debug.Log(Position.Value);
             UnityObject.transform.position = Position.Value;
         }
     }

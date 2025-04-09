@@ -59,11 +59,11 @@ namespace Code.Server
                 typesMap,
                 (byte)PacketType.EntitySystem, 
                 NetworkGeneral.GameFPS, 
-                ServerSendRate.ThirdOfFPS);
+                ServerSendRate.EqualToFPS);
 
             _serverEntityManager.AddSingleton<UnityPhysicsManager>();
 
-            for (int i = 0; i < 256; i++)
+            for (int i = 0; i < 0; i++)
             {
                 int botNum = i;
                 var botPlayer = _serverEntityManager.AddEntity<BasePlayer>(e =>

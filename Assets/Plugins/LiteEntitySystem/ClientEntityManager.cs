@@ -352,7 +352,6 @@ namespace LiteEntitySystem
                     IsExecutingRPC = true;
                     _stateA.ExecuteRpcs(this, 0, true);
                     IsExecutingRPC = false;
-                    
                     ExecuteSyncCalls();
                     
                     Logger.Log($"[CEM] Got baseline sync. Assigned player id: {header.PlayerId}, Original: {_stateA.Size}, Tick: {header.Tick}, SendRate: {_serverSendRate}");
@@ -453,12 +452,6 @@ namespace LiteEntitySystem
             //tune game prediction and input generation speed
             SpeedMultiplier = GetSpeedMultiplier(_stateB.BufferedInputsCount * DeltaTimeF);
             
-            //remove processed inputs
-            foreach (var controller in GetEntities<HumanControllerLogic>())
-                controller.RemoveClientProcessedInputs(_stateB.ProcessedTick);
-            while (_storedInputHeaders.Count > 0 && Utils.SequenceDiff(_stateB.ProcessedTick, _storedInputHeaders.Front().Tick) >= 0)
-                _storedInputHeaders.PopFront();
-            
             return true;
 
             float GetSpeedMultiplier(float bufferTime) =>
@@ -468,6 +461,12 @@ namespace LiteEntitySystem
 
         private unsafe void GoToNextState()
         {
+            //remove processed inputs
+            foreach (var controller in GetEntities<HumanControllerLogic>())
+                controller.RemoveClientProcessedInputs(_stateB.ProcessedTick);
+            while (_storedInputHeaders.Count > 0 && Utils.SequenceDiff(_stateB.ProcessedTick, _storedInputHeaders.Front().Tick) >= 0)
+                _storedInputHeaders.PopFront();
+            
             ushort minimalTick = _stateA.Tick;
             _statesPool.Enqueue(_stateA);
             _stateA = _stateB;
@@ -481,6 +480,7 @@ namespace LiteEntitySystem
             IsExecutingRPC = true;
             _stateA.ExecuteRpcs(this, minimalTick, false);
             IsExecutingRPC = false;
+            ExecuteSyncCalls();
             
             int readerPosition = _stateA.DataOffset;
 
@@ -571,7 +571,6 @@ namespace LiteEntitySystem
                 i--;
             }
             
-            ExecuteSyncCalls();
             //================== ReadEntityStates END ====================
             
             _timer -= _lerpTime;
@@ -610,10 +609,10 @@ namespace LiteEntitySystem
                     _entitiesFastForwardUpdate.Enqueue(entity);
             }
 
-            PredictionRollback();
+            Reconciliation(false);
 
             //delete predicted
-            while (_spawnPredictedEntities.TryPeek(out var info))
+            while (false && _spawnPredictedEntities.TryPeek(out var info))
             {
                 if (Utils.SequenceDiff(_stateA.ProcessedTick, info.tick) >= 0)
                 {
@@ -630,8 +629,13 @@ namespace LiteEntitySystem
             }
         }
 
-        private unsafe void PredictionRollback()
+        private unsafe void Reconciliation(bool betweenFrames)
         {
+            if (betweenFrames && _entitiesFastForwardUpdate.Count > 0)
+            {
+                Logger.Log($"SpawnedBetweenFrames: {_entitiesFastForwardUpdate.Count}");
+            }
+            
             //reapply input
             UpdateMode = UpdateMode.PredictionRollback;
             for(int cmdNum = 0; cmdNum < _storedInputHeaders.Count; cmdNum++)
@@ -647,6 +651,7 @@ namespace LiteEntitySystem
 
                 if (cmdNum == _storedInputHeaders.Count - 1)
                 {
+                    //last update write interpolation
                     foreach (var entity in _entitiesFastForwardUpdate)
                     {
                         ref var classData = ref ClassDataDict[entity.ClassId];
@@ -658,27 +663,28 @@ namespace LiteEntitySystem
                                 field.TypeProcessor.WriteTo(entity, field.Offset, prevDataPtr + field.FixedOffset);
                             }
                         }
+                        
+                        entity.Update();
+
+                        for (int i = 0; i < classData.InterpolatedCount; i++)
+                        {
+                            fixed (byte* currentDataPtr = classData.ClientInterpolatedNextData(entity))
+                            {
+                                ref var field = ref classData.Fields[i];
+                                field.TypeProcessor.WriteTo(entity, field.Offset, currentDataPtr + field.FixedOffset);
+                            }
+                        }
                     }
                 }
-                foreach (var entity in _entitiesFastForwardUpdate)
-                    entity.Update();
+                else
+                {
+                    //simple update
+                    foreach (var entity in _entitiesFastForwardUpdate)
+                        entity.Update();
+                }
+         
             }
             UpdateMode = UpdateMode.Normal;
-                        
-            //update local interpolated position
-            foreach (var entity in _entitiesFastForwardUpdate)
-            {
-                ref var classData = ref ClassDataDict[entity.ClassId];
-                for(int i = 0; i < classData.InterpolatedCount; i++)
-                {
-                    fixed (byte* currentDataPtr = classData.ClientInterpolatedNextData(entity))
-                    {
-                        ref var field = ref classData.Fields[i];
-                        field.TypeProcessor.WriteTo(entity, field.Offset, currentDataPtr + field.FixedOffset);
-                    }
-                }
-            }
-            
             _entitiesFastForwardUpdate.Clear();
         }
 
@@ -699,10 +705,12 @@ namespace LiteEntitySystem
             if (_stateB != null)
             {
                 ServerTick = Utils.LerpSequence(_stateA.Tick, _stateB.Tick, (float)(_timer/_lerpTime));
+                
                 IsExecutingRPC = true;
                 _stateB.ExecuteRpcs(this, _stateA.Tick, false);
                 IsExecutingRPC = false;
-                PredictionRollback();
+                Reconciliation(true);
+                ExecuteSyncCalls();
             }
 
             //apply input
@@ -1001,8 +1009,7 @@ namespace LiteEntitySystem
                 return;
             }
             var entity = EntitiesDict[entityId];
-            bool isConstructed = entity.IsConstructed;
-            bool writeInterpolationData = !isConstructed || entity.IsRemoteControlled;
+            bool writeInterpolationData = !entity.IsConstructed || entity.IsRemoteControlled;
             ref var classData = ref entity.ClassData;
             _changedEntities.Add(entity);
             Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
@@ -1046,15 +1053,16 @@ namespace LiteEntitySystem
                     readerPosition += field.IntSize;
                 }
             }
-            ConstructEntity(entity);
-            ExecuteSyncCalls();
-            //write initial history
-            if(entity is EntityLogic el && IsEntityLagCompensated(entity))
-                ClassDataDict[entity.ClassId].WriteHistory(el, ServerTick);
-            //if (flags.HasFlagFast(EntityFlags.Updateable) && !flags.HasFlagFast(EntityFlags.UpdateOnClient))
-            //fast forward prediction
-            if (!isConstructed && entity.IsLocalControlled && AliveEntities.Contains(entity))
-                _entitiesFastForwardUpdate.Enqueue(entity);
+
+            if (ConstructEntity(entity))
+            {
+                //write initial history
+                if(entity is EntityLogic el && IsEntityLagCompensated(entity))
+                    ClassDataDict[entity.ClassId].WriteHistory(el, ServerTick);
+                //fast forward prediction
+                if (entity.IsLocalControlled && AliveEntities.Contains(entity))
+                    _entitiesFastForwardUpdate.Enqueue(entity);
+            }
         }
         
         private static bool IsEntityIdValid(ushort id)

@@ -478,10 +478,10 @@ namespace LiteEntitySystem
             return entity;
         }
 
-        protected void ConstructEntity(InternalEntity e)
+        protected bool ConstructEntity(InternalEntity e)
         {
             if (e.IsConstructed)
-                return;
+                return false;
             e.IsConstructed = true;
             
             ref var classData = ref ClassDataDict[e.ClassId];
@@ -509,6 +509,8 @@ namespace LiteEntitySystem
                 AliveEntities.Add(e);
                 OnAliveEntityAdded(e);
             }
+
+            return true;
         }
         
         protected virtual void OnAliveEntityAdded(InternalEntity e)

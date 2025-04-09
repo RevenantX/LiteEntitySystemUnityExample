@@ -184,7 +184,7 @@ namespace Code.Shared
                     {
                         Player = this,
                         Position = _position,
-                        Speed = new Vector2(Mathf.Cos(_rotation.Value * Mathf.Deg2Rad), Mathf.Sin(_rotation.Value * Mathf.Deg2Rad)) * 10f
+                        Speed = new Vector2(Mathf.Cos(_rotation.Value * Mathf.Deg2Rad), Mathf.Sin(_rotation.Value * Mathf.Deg2Rad)) * 2f
                     };
                     AddPredictedEntity<SimpleProjectile>(initParams.Init);
                 }

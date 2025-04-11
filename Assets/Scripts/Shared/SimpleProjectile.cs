@@ -107,8 +107,6 @@ namespace Code.Shared
 
         protected override void VisualUpdate()
         {
-            if(!IsLocal)
-                Debug.Log(Position.Value);
             UnityObject.transform.position = Position.Value;
         }
     }

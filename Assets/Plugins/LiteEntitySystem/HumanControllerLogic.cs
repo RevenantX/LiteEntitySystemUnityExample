@@ -112,6 +112,17 @@ namespace LiteEntitySystem
             _skippedEntities.Clear();
         }
 
+        protected internal override void OnSyncRequested()
+        {
+            //send skipped on sync
+            foreach (var entityRef in _skippedEntities)
+            {
+                var entity = EntityManager.GetEntityById<EntityLogic>(entityRef);
+                if(entity != null)
+                    ExecuteRPC(OnEntitySyncChangedRPC, new EntitySyncInfo { Entity = entity, SyncEnabled = false });
+            }
+        }
+
         //add to force sync list and trigger force entity sync in state serializer
         internal void ForceSyncEntity(InternalEntity entity) =>
             ServerManager.ForceEntitySync(InternalOwnerId, entity);

@@ -140,6 +140,7 @@ namespace LiteEntitySystem
         private readonly HashSet<InternalEntity> _changedEntities = new();
         private readonly CircularBuffer<InputInfo> _storedInputHeaders = new(InputBufferSize);
         private InternalEntity[] _entitiesToRemove = new InternalEntity[64];
+        private readonly AVLTree<InternalEntity> _tempEntityTree = new();
         private int _entitiesToRemoveCount;
 
         private ServerSendRate _serverSendRate;
@@ -621,8 +622,6 @@ namespace LiteEntitySystem
             
             base.OnEntityDestroyed(e);
         }
-
-        private readonly AVLTree<InternalEntity> _tempEntityTree = new();
         
         protected override unsafe void OnLogicTick()
         {
@@ -903,6 +902,9 @@ namespace LiteEntitySystem
 
         private void ExecuteSyncCalls(ServerStateData serverStateData)
         {
+            foreach (var lagCompensatedEntity in LagCompensatedEntities)
+                ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
+            
             //Make OnChangeCalls after construct
             for (int i = 0; i < _syncCallsCount; i++)
             {
@@ -991,10 +993,6 @@ namespace LiteEntitySystem
 
             if (!ConstructEntity(entity)) 
                 return;
-            
-            //write initial history
-            if(IsEntityLagCompensated(entity))
-                ClassDataDict[entity.ClassId].WriteHistory((EntityLogic)entity, ServerTick);
             
             //fast forward prediction
             if (entity.IsLocalControlled && AliveEntities.Contains(entity))

@@ -63,7 +63,7 @@ namespace Code.Server
 
             _serverEntityManager.AddSingleton<UnityPhysicsManager>();
 
-            for (int i = 0; i < 0; i++)
+            for (int i = 0; i < 255; i++)
             {
                 int botNum = i;
                 var botPlayer = _serverEntityManager.AddEntity<BasePlayer>(e =>

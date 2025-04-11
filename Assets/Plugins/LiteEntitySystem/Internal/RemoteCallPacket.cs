@@ -19,7 +19,7 @@ namespace LiteEntitySystem.Internal
         public const int ReserverdRPCsCount = 3;
         public const ushort NewRPCId = 0;
         public const ushort ConstructRPCId = 1;
-        public const ushort DeleteRPCId = 2;
+        public const ushort DestroyRPCId = 2;
 
         public static void InitReservedRPCs(List<RpcFieldInfo> rpcCahce)
         {

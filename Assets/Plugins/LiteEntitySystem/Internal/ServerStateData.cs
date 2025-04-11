@@ -220,7 +220,7 @@ namespace LiteEntitySystem.Internal
                                 //Logger.Log($"ConstructRPC for entity: {header.EntityId}, RpcReadPos: {_rpcReadPos}, Tick: {header.Tick}");
                                 entityManager.ReadConstructRPC(header.EntityId, rawData, rpcDataStart);
                             }
-                            else if (header.Id == RemoteCallPacket.DeleteRPCId)
+                            else if (header.Id == RemoteCallPacket.DestroyRPCId)
                             {
                                 entity.DestroyInternal();
                             }

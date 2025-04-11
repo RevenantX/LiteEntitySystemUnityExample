@@ -47,5 +47,20 @@ namespace LiteEntitySystem
             Id = id;
             Peer = peer;
         }
+
+        internal void LoadInputInfo(InputPacketHeader inputData)
+        {
+            StateATick = inputData.StateA;
+            StateBTick = inputData.StateB;
+            LerpTime = inputData.LerpMsec;
+        }
+        
+        internal void LoadInputInfo(InputInfo inputData)
+        {
+            LastProcessedTick = inputData.Tick;
+            StateATick = inputData.Header.StateA;
+            StateBTick = inputData.Header.StateB;
+            LerpTime = inputData.Header.LerpMsec;
+        }
     }
 }

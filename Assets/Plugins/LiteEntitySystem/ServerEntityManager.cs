@@ -437,7 +437,13 @@ namespace LiteEntitySystem
             //Debug.Log($"[SEM] Entity create. clsId: {classData.ClassId}, id: {entityId}, v: {version}");
             return entity;
         }
-        
+
+        internal override void OnEntityDestroyed(InternalEntity e)
+        {
+            _stateSerializers[e.Id].MakeDestroyedRPC();
+            base.OnEntityDestroyed(e);
+        }
+
         protected override unsafe void OnLogicTick()
         {
             //read pending client requests
@@ -463,11 +469,7 @@ namespace LiteEntitySystem
                 }
                 
                 var inputFrame = player.AvailableInput.ExtractMin();
-                ref var inputData = ref inputFrame.Header;
-                player.LastProcessedTick = inputFrame.Tick;
-                player.StateATick = inputData.StateA;
-                player.StateBTick = inputData.StateB;
-                player.LerpTime = inputData.LerpMsec;
+                player.LoadInputInfo(inputFrame);
                 //Logger.Log($"[SEM] CT: {player.LastProcessedTick}, stateA: {player.StateATick}, stateB: {player.StateBTick}");
                 if (player.State == NetPlayerState.WaitingForFirstInputProcess)
                     player.State = NetPlayerState.Active;

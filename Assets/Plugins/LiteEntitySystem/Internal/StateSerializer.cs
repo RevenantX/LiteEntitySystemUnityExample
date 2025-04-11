@@ -95,6 +95,12 @@ namespace LiteEntitySystem.Internal
             //Logger.Log($"Added constructed RPC: {_entity}");
         }
 
+        public void MakeDestroyedRPC() =>
+            _entity.ServerManager.AddRemoteCall(
+                _entity,
+                RemoteCallPacket.DestroyRPCId,
+                ExecuteFlags.SendToAll);
+
         public void MakeBaseline(byte playerId)
         {
             //skip inactive and other controlled controllers

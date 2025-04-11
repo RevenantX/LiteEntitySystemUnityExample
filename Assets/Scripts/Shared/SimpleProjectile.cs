@@ -45,7 +45,7 @@ namespace Code.Shared
                 var prefab = Resources.Load<GameObject>("ProjectileClient");
                 UnityObject = Object.Instantiate(prefab, Position.Value, Quaternion.identity, _unityPhys.Root);
                 UnityObject.name = $"Projectile_{Id}";
-                UnityObject.GetComponent<SpriteRenderer>().color = IsLocal ? Color.green : Color.red;
+                //UnityObject.GetComponent<SpriteRenderer>().color = IsLocal ? Color.green : Color.red;
             }
         }
 

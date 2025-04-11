@@ -13,6 +13,6 @@ namespace Code.Shared
     
     public static class NetworkGeneral
     {
-        public const int GameFPS = 10;
+        public const int GameFPS = 30;
     }
 }

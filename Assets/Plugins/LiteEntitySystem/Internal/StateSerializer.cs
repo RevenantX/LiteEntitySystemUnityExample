@@ -74,11 +74,11 @@ namespace LiteEntitySystem.Internal
             //make on sync
             try
             {
-                _entity.OnSyncRequested();
                 var syncableFields = _entity.ClassData.SyncableFields;
                 for (int i = 0; i < syncableFields.Length; i++)
                     RefMagic.RefFieldValue<SyncableField>(_entity, syncableFields[i].Offset)
                         .OnSyncRequested();
+                _entity.OnSyncRequested();
             }
             catch (Exception e)
             {
@@ -95,11 +95,21 @@ namespace LiteEntitySystem.Internal
             //Logger.Log($"Added constructed RPC: {_entity}");
         }
 
-        public void MakeDestroyedRPC() =>
+        //refresh construct rpc with latest values (old behaviour)
+        public unsafe void RefreshConstructedRPC(RemoteCallPacket packet)
+        {
+            fixed(byte* sourceData = _latestEntityData, rawData = packet.Data)
+                RefMagic.CopyBlock(rawData, sourceData + HeaderSize, (uint)(_fullDataSize - HeaderSize));
+        }
+
+        public void MakeDestroyedRPC()
+        {
+            LastChangedTick = _entity.EntityManager.Tick;
             _entity.ServerManager.AddRemoteCall(
                 _entity,
                 RemoteCallPacket.DestroyRPCId,
                 ExecuteFlags.SendToAll);
+        }
 
         public void MakeBaseline(byte playerId)
         {

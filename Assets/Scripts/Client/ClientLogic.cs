@@ -187,7 +187,7 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
                 else
                 {
                     //Debug.Log($"[C] Player joined: {player.Name}");
-                    RemotePlayerView.Create(_remotePlayerViewPrefab, player);
+                    player.View = RemotePlayerView.Create(_remotePlayerViewPrefab, player).gameObject;
                 }
             }, true);
         }

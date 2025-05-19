@@ -148,6 +148,7 @@ namespace LiteEntitySystem
         private ServerStateData _stateB;
         private float _lerpTime;
         private double _timer;
+        private int _syncCallsCount;
         
         private readonly IdGeneratorUShort _localIdQueue = new(MaxSyncedEntityCount, MaxEntityCount);
 
@@ -243,7 +244,7 @@ namespace LiteEntitySystem
         /// </summary>
         /// <typeparam name="T">Entity type</typeparam>
         /// <returns>Created entity or null if entities limit is reached (<see cref="EntityManager.MaxEntityCount"/>)</returns>
-        internal T AddLocalEntity<T>(Action<T> initMethod) where T : EntityLogic
+        internal T AddLocalEntity<T>(EntityLogic parent, Action<T> initMethod) where T : EntityLogic
         {
             if (_localIdQueue.AvailableIds == 0)
             {
@@ -262,7 +263,8 @@ namespace LiteEntitySystem
             
             //Logger.Log($"AddPredicted, tick: {_tick}, rb: {InRollBackState}, id: {entity.Id}");
             
-            entity.InternalOwnerId.Value = InternalPlayerId;
+            entity.InternalOwnerId.Value = parent.InternalOwnerId;
+            entity.SetParentInternal(parent);
             initMethod(entity);
             ConstructEntity(entity);
             _spawnPredictedEntities.Enqueue((_tick, entity));
@@ -331,14 +333,10 @@ namespace LiteEntitySystem
                     }
 
                     while (_readyStates.Count > 0)
-                    {
                         _statesPool.Enqueue(_readyStates.ExtractMin());
-                    }
 
                     foreach (var stateData in _receivedStates.Values)
-                    {
                         _statesPool.Enqueue(stateData);
-                    }
 
                     _receivedStates.Clear();
 
@@ -347,7 +345,8 @@ namespace LiteEntitySystem
                         return DeserializeResult.Error;
                     
                     InternalPlayerId = header.PlayerId;
-                    _localPlayer = new NetPlayer(_netPeer, InternalPlayerId);
+                    if(_localPlayer == null || _localPlayer.Id != InternalPlayerId)
+                        _localPlayer = new NetPlayer(_netPeer, InternalPlayerId);
                     ServerTick = _stateA.Tick;
                     _lastReadyTick = ServerTick;
                     foreach (var controller in GetEntities<HumanControllerLogic>())
@@ -358,6 +357,7 @@ namespace LiteEntitySystem
                     IsExecutingRPC = true;
                     _stateA.ExecuteRpcs(this, 0, true);
                     IsExecutingRPC = false;
+                    ExecuteSyncCalls(_stateA);
                     foreach (var lagCompensatedEntity in LagCompensatedEntities)
                         ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
                     
@@ -487,6 +487,7 @@ namespace LiteEntitySystem
             IsExecutingRPC = true;
             _stateA.ExecuteRpcs(this, minimalTick, false);
             IsExecutingRPC = false;
+            ExecuteSyncCalls(_stateA);
 
             int readerPosition = _stateA.DataOffset;
             int syncCallsCount = 0;
@@ -725,6 +726,7 @@ namespace LiteEntitySystem
                 IsExecutingRPC = true;
                 _stateB.ExecuteRpcs(this, _stateA.Tick, false);
                 IsExecutingRPC = false;
+                ExecuteSyncCalls(_stateB);
                 foreach (var lagCompensatedEntity in LagCompensatedEntities)
                     ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
             }
@@ -929,7 +931,7 @@ namespace LiteEntitySystem
             if (entity != null && entity.Version != entityDataHeader.Version)
             {
                 //this can be only on logics (not on singletons)
-                Logger.Log($"[CEM] Replace entity by new: {entityDataHeader.Version}");
+                Logger.Log($"[CEM] Replace entity by new: {entityDataHeader.Version}. Class: {entityDataHeader.ClassId}. Id: {entityDataHeader.Id}");
                 entity.DestroyInternal();
                 RemoveEntity(entity);
                 _predictedEntities.Remove(entity);
@@ -948,7 +950,15 @@ namespace LiteEntitySystem
             }
         }
         
-        internal unsafe void ReadConstructRPC(ServerStateData stateData, ushort entityId, byte* rawData, int readerPosition)
+        private void ExecuteSyncCalls(ServerStateData stateData)
+        {
+            ExecuteLateConstruct();
+            for (int i = 0; i < _syncCallsCount; i++)
+                _syncCalls[i].Execute(stateData);
+            _syncCallsCount = 0;
+        }
+        
+        internal unsafe void ReadConstructRPC(ushort entityId, byte* rawData, int readerPosition)
         {
             //Logger.Log("ConstructRPC");
             if (!IsEntityIdValid(entityId))
@@ -960,9 +970,8 @@ namespace LiteEntitySystem
             var entity = EntitiesDict[entityId];
             bool writeInterpolationData = !entity.IsConstructed || entity.IsRemoteControlled;
             ref var classData = ref entity.ClassData;
-            Utils.ResizeOrCreate(ref _syncCalls, classData.FieldsCount);
-            int syncCallsCount = 0;
-            
+            Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
+
             fixed (byte* interpDataPtr = classData.ClientInterpolatedNextData(entity),
                 prevDataPtr = classData.ClientInterpolatedPrevData(entity),
                 predictedData = classData.ClientPredictedData(entity))
@@ -977,16 +986,24 @@ namespace LiteEntitySystem
                             writeInterpolationData ? interpDataPtr : null, 
                             writeInterpolationData ? prevDataPtr : null))
                     {
-                        _syncCalls[syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition, field.IntSize);
+                        _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition, field.IntSize);
                     }
 
                     //Logger.Log($"E {entity.Id} Field updated: {field.Name}");
                     readerPosition += field.IntSize;
                 }
             }
-            
+
             //Construct and fast forward predicted entities
-            if (ConstructEntity(entity) && entity is EntityLogic { IsLocalControlled: true, IsPredicted: true } && AliveEntities.Contains(entity))
+            if (ConstructEntity(entity) == false)
+                return;
+
+            if (entity is not EntityLogic entityLogic)
+                return;
+            
+            entityLogic.RefreshOwnerInfo(null);
+            
+            if (entityLogic.IsLocalControlled && entityLogic.IsPredicted && AliveEntities.Contains(entity))
             {
                 UpdateMode = UpdateMode.PredictionRollback;
                 for(int cmdNum = Utils.SequenceDiff(ServerTick, _stateA.Tick); cmdNum < _storedInputHeaders.Count; cmdNum++)
@@ -1022,9 +1039,6 @@ namespace LiteEntitySystem
                 
                 UpdateMode = UpdateMode.Normal; 
             }
-            
-            for (int i = 0; i < syncCallsCount; i++)
-                _syncCalls[i].Execute(stateData);
         }
         
         private static bool IsEntityIdValid(ushort id)
@@ -1035,6 +1049,12 @@ namespace LiteEntitySystem
                 return false;
             }
             return true;
+        }
+        
+        public void GetDiagnosticData(Dictionary<int, LESDiagnosticDataEntry> diagnosticDataDict)
+        {
+            diagnosticDataDict.Clear();
+            _stateA?.GetDiagnosticData(EntitiesDict, ClassDataDict, diagnosticDataDict);
         }
     }
 }

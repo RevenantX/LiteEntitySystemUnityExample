@@ -10,7 +10,8 @@ namespace LiteEntitySystem
         Active,
         WaitingForFirstInput,
         WaitingForFirstInputProcess,
-        RequestBaseline
+        RequestBaseline,
+        Removed
     }
 
     internal struct InputInfo
@@ -38,13 +39,23 @@ namespace LiteEntitySystem
         internal float LerpTime;
         
         //server only
+        internal bool FirstBaselineSent;
         internal NetPlayerState State;
-        internal SequenceBinaryHeap<InputInfo> AvailableInput;
+        internal readonly SequenceBinaryHeap<InputInfo> AvailableInput;
+        internal readonly Dictionary<EntityLogic, SyncGroupData> EntitySyncInfo;
 
         internal NetPlayer(AbstractNetPeer peer, byte id)
         {
             Id = id;
             Peer = peer;
+        }
+        
+        //server constructor
+        internal NetPlayer(AbstractNetPeer peer, byte id, int serverMaxStoredInputs) : this(peer, id)
+        {
+            AvailableInput = new SequenceBinaryHeap<InputInfo>(serverMaxStoredInputs);
+            EntitySyncInfo = new();
+            State = NetPlayerState.RequestBaseline;
         }
 
         internal void LoadInputInfo(InputPacketHeader inputData)

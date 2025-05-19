@@ -10,15 +10,16 @@ namespace Code.Shared
     {
         private static readonly RaycastHit2D[] RaycastHits = new RaycastHit2D[100];
         
-        [SyncVarFlags(SyncFlags.Interpolated | SyncFlags.LagCompensated)] 
+        [SyncVarFlags(SyncFlags.Interpolated | SyncFlags.LagCompensated | SyncFlags.SyncGroup1)] 
         private SyncVar<Vector2> _position;
         
-        [SyncVarFlags(SyncFlags.Interpolated | SyncFlags.LagCompensated)] 
+        [SyncVarFlags(SyncFlags.Interpolated | SyncFlags.LagCompensated | SyncFlags.SyncGroup1)] 
         private SyncVar<FloatAngle> _rotation;
         
-        [SyncVarFlags(SyncFlags.AlwaysRollback)] 
+        [SyncVarFlags(SyncFlags.AlwaysRollback | SyncFlags.SyncGroup1)] 
         private SyncVar<byte> _health;
         
+        [SyncVarFlags(SyncFlags.SyncGroup1)]
         private SyncVar<float> _speed;
         public readonly SyncString Name = new ();
         private readonly SyncTimer _shootTimer = new (0.5f);
@@ -38,6 +39,7 @@ namespace Code.Shared
         public float Rotation => _rotation.Value;
         
         public GameObject UnityObject;
+        public GameObject View;
         
         public BasePlayer(EntityParams entityParams) : base(entityParams)
         {
@@ -47,8 +49,8 @@ namespace Code.Shared
         protected override void RegisterRPC(ref RPCRegistrator r)
         {
             base.RegisterRPC(ref r);
-            r.CreateRPCAction(this, OnShoot, ref _shootRemoteCall, ExecuteFlags.ExecuteOnPrediction | ExecuteFlags.SendToOther);
-            r.CreateRPCAction(this, OnHit, ref _hitRemoteCall, ExecuteFlags.ExecuteOnPrediction | ExecuteFlags.SendToOther);
+            r.CreateRPCAction(this, OnShoot, ref _shootRemoteCall, ExecuteFlags.ExecuteOnPrediction | ExecuteFlags.SendToOther | ExecuteFlags.SyncGroup1);
+            r.CreateRPCAction(this, OnHit, ref _hitRemoteCall, ExecuteFlags.ExecuteOnPrediction | ExecuteFlags.SendToOther | ExecuteFlags.SyncGroup1);
         }
 
         protected override void OnConstructed()
@@ -65,13 +67,28 @@ namespace Code.Shared
             Debug.Log($"Player joined: {Name.Value}");
         }
 
-        public void SetActive(bool active)
+        protected override void OnLateConstructed()
+        {
+            SetActive(IsSyncGroupEnabled(SyncGroup.SyncGroup1));
+        }
+
+        protected override void OnSyncGroupsChanged(SyncGroup enabledGroups)
+        {
+            //Debug.Log($"SyncChanged: {this} - {enabledGroups}");
+            base.OnSyncGroupsChanged(enabledGroups);
+
+            bool enabled = enabledGroups.HasFlagFast(SyncGroup.SyncGroup1);
+            SetActive(enabled);
+        }
+
+        private void SetActive(bool active)
         {
             if (UnityObject == null)
                 return;
             if (active)
                 UnityObject.transform.position = _position.Value;
             UnityObject.SetActive(active);
+            View?.SetActive(active);
         }
 
         protected override void OnLagCompensationStart()

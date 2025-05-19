@@ -51,25 +51,59 @@ namespace LiteEntitySystem.Internal
                 *(EntityDataHeader*)data = _entity.DataHeader;
         }
         
-        public unsafe void MarkFieldChanged<T>(ushort fieldId, ushort tick, ref T newValue) where T : unmanaged
+        public unsafe void UpdateFieldValue<T>(ushort fieldId, ushort tick, ref T newValue) where T : unmanaged
         {
             LastChangedTick = tick;
             _fieldChangeTicks[fieldId] = tick;
             fixed (byte* data = &_latestEntityData[HeaderSize + _fields[fieldId].FixedOffset])
                 *(T*)data = newValue;
         }
+        
+        public void MarkFieldsChanged(ushort tick, SyncFlags onlyWithFlags)
+        {
+            LastChangedTick = tick;
+            for (int i = 0; i < _fieldsCount; i++)
+                if ((_fields[i].Flags & onlyWithFlags) == onlyWithFlags)
+                    _fieldChangeTicks[i] = tick;
+        }
 
         public int GetMaximumSize() =>
-            _entity == null ? 0 : (int)_fullDataSize + sizeof(ushort);
+            _entity == null ? 0 : (int)_fullDataSize + + sizeof(ushort) + sizeof(ushort) + _fieldsFlagsSize;
 
-        public void MakeNewRPC() =>
+        public void MakeNewRPC()
+        {
             _entity.ServerManager.AddRemoteCall(
                 _entity,
                 new ReadOnlySpan<byte>(_latestEntityData, 0, HeaderSize),
                 RemoteCallPacket.NewRPCId,
                 ExecuteFlags.SendToAll);
+        }
+        
+        //refresh construct rpc with latest values (old behaviour)
+        public unsafe void RefreshConstructedRPC(RemoteCallPacket packet, NetPlayer player)
+        {
+            RefreshSyncGroupsVariable(player);
+            fixed (byte* sourceData = _latestEntityData, rawData = packet.Data)
+            {
+                RefMagic.CopyBlock(rawData, sourceData + HeaderSize, (uint)(_fullDataSize - HeaderSize));
+            }
+        }
 
-        public void MakeConstructedRPC()
+        private SyncGroup RefreshSyncGroupsVariable(NetPlayer player)
+        {
+            SyncGroup enabledGroups = SyncGroup.All;
+            if (player != null && _entity is EntityLogic el &&
+                player.EntitySyncInfo.TryGetValue(el, out var syncGroupData) &&
+                syncGroupData.IsInitialized)
+            {
+                enabledGroups = syncGroupData.EnabledGroups;
+                _fieldChangeTicks[el.IsSyncEnabledFieldId] = syncGroupData.LastChangedTick;
+                _latestEntityData[HeaderSize + _fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledGroups;
+            }
+            return enabledGroups;
+        }
+
+        public void MakeConstructedRPC(NetPlayer player)
         {
             //make on sync
             try
@@ -84,6 +118,8 @@ namespace LiteEntitySystem.Internal
             {
                 Logger.LogError($"Exception in OnSyncRequested: {e}");
             }
+
+            RefreshSyncGroupsVariable(player);
             
             //actual on constructed rpc
             _entity.ServerManager.AddRemoteCall(
@@ -91,38 +127,26 @@ namespace LiteEntitySystem.Internal
                 new ReadOnlySpan<byte>(_latestEntityData, HeaderSize, (int)(_fullDataSize - HeaderSize)),
                 RemoteCallPacket.ConstructRPCId,
                 ExecuteFlags.SendToAll);
-            
             //Logger.Log($"Added constructed RPC: {_entity}");
         }
 
-        //refresh construct rpc with latest values (old behaviour)
-        public unsafe void RefreshConstructedRPC(RemoteCallPacket packet)
+        public void MakeDestroyedRPC(ushort tick)
         {
-            fixed(byte* sourceData = _latestEntityData, rawData = packet.Data)
-                RefMagic.CopyBlock(rawData, sourceData + HeaderSize, (uint)(_fullDataSize - HeaderSize));
-        }
-
-        public void MakeDestroyedRPC()
-        {
-            LastChangedTick = _entity.EntityManager.Tick;
+            //Logger.Log($"DestroyEntity: {_entity.Id} {_entity.Version}, ClassId: {_entity.ClassId}");
+            LastChangedTick = tick;
             _entity.ServerManager.AddRemoteCall(
                 _entity,
                 RemoteCallPacket.DestroyRPCId,
                 ExecuteFlags.SendToAll);
         }
 
-        public void MakeBaseline(byte playerId)
+        public bool ShouldSync(byte playerId, bool includeDestroyed)
         {
-            //skip inactive and other controlled controllers
-            if (_entity == null || _entity.IsDestroyed)
-                return;
-            bool isOwned = _entity.InternalOwnerId.Value == playerId;
-            if (_flags.HasFlagFast(EntityFlags.OnlyForOwner) && !isOwned)
-                return;
-            //don't write total size in full sync and fields
-            MakeNewRPC();
-            MakeConstructedRPC();
-            //Logger.Log($"[SEM] SendBaseline for entity: {_entity.Id}, pos: {position}, posAfterData: {position + _fullDataSize}");
+            if (_entity == null || (!includeDestroyed && _entity.IsDestroyed))
+                return false;
+            if (_flags.HasFlagFast(EntityFlags.OnlyForOwner) && _entity.InternalOwnerId.Value != playerId)
+                return false;
+            return true;
         }
 
         public void Free()
@@ -131,7 +155,7 @@ namespace LiteEntitySystem.Internal
             _latestEntityData = null;
         }
 
-        public unsafe bool MakeDiff(byte playerId, ushort minimalTick, ushort playerTick, byte* resultData, ref int position, HumanControllerLogic playerController)
+        public unsafe bool MakeDiff(NetPlayer player, ushort minimalTick, byte* resultData, ref int position)
         {
             if (_entity == null)
             {
@@ -139,23 +163,23 @@ namespace LiteEntitySystem.Internal
                 return false;
             }
 
+            //refresh minimal tick to prevent errors on tick wrap-arounds
+            if (Utils.SequenceDiff(_versionChangedTick, minimalTick) < 0)
+                _versionChangedTick = minimalTick;
+            
+            //skip known
+            if (Utils.SequenceDiff(LastChangedTick, player.StateATick) <= 0)
+                return false;
+            
             if (_entity.IsDestroyed && Utils.SequenceDiff(LastChangedTick, minimalTick) < 0)
             {
                 Logger.LogError($"Should be removed before: {_entity}");
                 return false;
             }
-
-            //refresh minimal tick to prevent errors on tick wrap-arounds
-            if (Utils.SequenceDiff(_versionChangedTick, minimalTick) < 0)
-                _versionChangedTick = minimalTick;
             
             //skip sync for non owners
-            bool isOwned = _entity.InternalOwnerId.Value == playerId;
+            bool isOwned = _entity.InternalOwnerId.Value == player.Id;
             if (_flags.HasFlagFast(EntityFlags.OnlyForOwner) && !isOwned)
-                return false;
-            
-            //skip diff sync if disabled
-            if (playerController != null && playerController.IsEntityDiffSyncDisabled(new EntitySharedReference(_entity.Id, _entity.Version)))
                 return false;
             
             //make diff
@@ -169,6 +193,10 @@ namespace LiteEntitySystem.Internal
             fixed (byte* lastEntityData = _latestEntityData) //make diff
             {
                 byte* entityDataAfterHeader = lastEntityData + HeaderSize;
+                
+                //overwrite IsSyncEnabled for each player
+                SyncGroup enabledSyncGroups = RefreshSyncGroupsVariable(player);
+                
                 // -1 for cycle
                 byte* fields = resultData + startPos + DiffHeaderSize - 1;
                 //put entity id at 2
@@ -193,7 +221,7 @@ namespace LiteEntitySystem.Internal
                     }
                     
                     //not actual
-                    if (Utils.SequenceDiff(_fieldChangeTicks[i], playerTick) <= 0)
+                    if (Utils.SequenceDiff(_fieldChangeTicks[i], player.CurrentServerTick) <= 0)
                     {
                         //Logger.Log($"SkipOld: {field.Name}");
                         //old data
@@ -205,6 +233,12 @@ namespace LiteEntitySystem.Internal
                         ((field.Flags & SyncFlags.OnlyForOtherPlayers) != 0 && isOwned))
                     {
                         //Logger.Log($"SkipSync: {field.Name}, isOwned: {isOwned}");
+                        continue;
+                    }
+                    
+                    if(!isOwned && SyncGroupUtils.IsSyncVarDisabled(enabledSyncGroups, field.Flags))
+                    {
+                        //IgnoreDiffSyncSettings
                         continue;
                     }
                     

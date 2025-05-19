@@ -138,14 +138,12 @@ namespace Code.Shared
 
         private void OnHit(HitPacket p)
         {
-            if(UnityObject.activeSelf)
-                ClientLogic.Instance.SpawnHit(p.Position);
+            ClientLogic.Instance.SpawnHit(p.Position);
         }
         
         private void OnShoot(ShootPacket p)
         {
-            if(UnityObject.activeSelf)
-                ClientLogic.Instance.SpawnShoot(p.Origin, p.Hit);
+            ClientLogic.Instance.SpawnShoot(p.Origin, p.Hit);
         }
 
         public void SetInput(bool isFiring, bool isProjectileFiring, float rotation, Vector2 velocity)

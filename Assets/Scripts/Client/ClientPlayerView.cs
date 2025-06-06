@@ -6,7 +6,7 @@ namespace Code.Client
     public class ClientPlayerView : MonoBehaviour
     {
         [SerializeField] private TextMesh _name;
-        private BasePlayerController _playerController;
+        private BasePlayer _player;
         private Transform _mainCamera;
 
         private Vector3 _currentDampVelocity;
@@ -16,20 +16,19 @@ namespace Code.Client
             _mainCamera = Camera.main!.transform;
         }
         
-        public static ClientPlayerView Create(ClientPlayerView prefab, BasePlayerController playerController)
+        public static ClientPlayerView Create(ClientPlayerView prefab, BasePlayer player)
         {
-            var player = playerController.ControlledEntity;
             var obj = Instantiate(prefab, player.UnityObject.transform);
-            obj._playerController = playerController;
+            obj._player = player;
             obj._name.text = player.Name;
             return obj;
         }
 
         private void LateUpdate()
         {
-            if (_playerController.ControlledEntity != null)
+            if (_player != null)
             {
-                Vector2 pos = _playerController.ControlledEntity.Position;
+                Vector2 pos = _player.Position;
                 _mainCamera.position = Vector3.SmoothDamp(_mainCamera.position, new Vector3(pos.x, pos.y, _mainCamera.position.z), ref _currentDampVelocity, 0.3f);
             }
         }

@@ -30,12 +30,22 @@ namespace Code.Shared
 
         protected override void OnConstructed()
         {
+            if (!IsLocal && IsClient)
+            {
+                //Debug.Log($"Cli_Constructed At TICK: {ClientManager.ServerTick} {this}");
+            }
+            else if (IsServer)
+            {
+                //Debug.Log($"Srv_Constructed At TICK: {EntityManager.Tick} {this}");
+            }
+            
             _unityPhys = EntityManager.GetSingleton<UnityPhysicsManager>();
             if (IsClient)
             {
                 var prefab = Resources.Load<GameObject>("ProjectileClient");
                 UnityObject = Object.Instantiate(prefab, Position.Value, Quaternion.identity, _unityPhys.Root);
                 UnityObject.name = $"Projectile_{Id}";
+                //UnityObject.GetComponent<SpriteRenderer>().color = IsLocal ? Color.green : Color.red;
             }
         }
 
@@ -56,6 +66,7 @@ namespace Code.Shared
             Position.Value = position;
             Speed.Value = speed;
             ShooterPlayer.Value = player;
+            //Debug.Log($"Shoot: {EntityManager.Mode}, Tick: {EntityManager.Tick}");
         }
 
         protected override void Update()

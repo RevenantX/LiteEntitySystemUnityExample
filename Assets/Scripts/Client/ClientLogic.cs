@@ -182,12 +182,12 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
                 if (player.IsLocalControlled)
                 {
                     _ourPlayer = player;
-                    ClientPlayerView.Create(_clientPlayerViewPrefab, (BasePlayerController)_ourPlayer.Controller);
+                    ClientPlayerView.Create(_clientPlayerViewPrefab, _ourPlayer);
                 }
                 else
                 {
                     //Debug.Log($"[C] Player joined: {player.Name}");
-                    RemotePlayerView.Create(_remotePlayerViewPrefab, player);
+                    player.View = RemotePlayerView.Create(_remotePlayerViewPrefab, player).gameObject;
                 }
             }, true);
         }

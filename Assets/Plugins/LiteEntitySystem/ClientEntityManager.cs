@@ -107,7 +107,7 @@ namespace LiteEntitySystem
         /// Preferred input and incoming states buffer length in seconds lowest bound
         /// Buffer automatically increases to Jitter time + PreferredBufferTimeLowest
         /// </summary>
-        public float PreferredBufferTimeLowest = 0.01f; 
+        public float PreferredBufferTimeLowest = 0.025f; 
         
         /// <summary>
         /// Preferred input and incoming states buffer length in seconds lowest bound
@@ -122,6 +122,7 @@ namespace LiteEntitySystem
         
         private const float TimeSpeedChangeFadeTime = 0.1f;
         private const float MaxJitter = 0.2f;
+        private const float MinJitter = 0.001f;
         
         /// <summary>
         /// Maximum stored inputs count
@@ -449,8 +450,8 @@ namespace LiteEntitySystem
             //limit jitter for pause scenarios
             if (NetworkJitter > MaxJitter)
                 NetworkJitter = MaxJitter;
-            float lowestBound = NetworkJitter + PreferredBufferTimeLowest;
-            float upperBound = NetworkJitter + PreferredBufferTimeHighest;
+            float lowestBound = NetworkJitter * 1.5f + PreferredBufferTimeLowest;
+            float upperBound = NetworkJitter * 1.5f + PreferredBufferTimeHighest;
 
             //tune buffer playing speed 
             _lerpTime = Utils.SequenceDiff(_stateB.Tick, _stateA.Tick) * DeltaTimeF;
@@ -692,7 +693,11 @@ namespace LiteEntitySystem
             }
 
             if (NetworkJitter > _jitterMiddle)
+            {
                 NetworkJitter -= DeltaTimeF * 0.1f;
+                if (NetworkJitter < MinJitter)
+                    NetworkJitter = MinJitter;
+            }
         }
 
         /// <summary>
@@ -918,7 +923,7 @@ namespace LiteEntitySystem
                                     field.TypeProcessor.WriteTo(e, field.Offset, prevDataPtr + field.FixedOffset);
                                 }
                             }
-                            e.Update();
+                            e.SafeUpdate();
                             for (int i = 0; i < classData.InterpolatedCount; i++)
                             {
                                 fixed (byte* currentDataPtr = classData.ClientInterpolatedNextData(e))
@@ -930,7 +935,7 @@ namespace LiteEntitySystem
                         }
                         else
                         {
-                            e.Update();
+                            e.SafeUpdate();
                         }
                     }
                 }

@@ -126,7 +126,7 @@ namespace LiteEntitySystem.Internal
                     //if no data it "never" changed
                     _fieldChangeTicks[el.IsSyncEnabledFieldId] = _versionChangedTick;
                 }
-                target[HeaderSize + _fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledGroups;
+                target[_fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledGroups;
             }
  
             return enabledGroups;
@@ -148,13 +148,15 @@ namespace LiteEntitySystem.Internal
             }
 
             //it can be null on entity creation
+            var entityDataSpan = new Span<byte>(_latestEntityData, HeaderSize, (int)(_fullDataSize - HeaderSize));
+            
             if(player != null)
-                RefreshSyncGroupsVariable(player, new Span<byte>(_latestEntityData));
+                RefreshSyncGroupsVariable(player, entityDataSpan);
             
             //actual on constructed rpc
             _entity.ServerManager.AddRemoteCall(
                 _entity,
-                new ReadOnlySpan<byte>(_latestEntityData, HeaderSize, (int)(_fullDataSize - HeaderSize)),
+                (ReadOnlySpan<byte>)entityDataSpan,
                 RemoteCallPacket.ConstructRPCId,
                 ExecuteFlags.SendToAll);
             //Logger.Log($"Added constructed RPC: {_entity}");
@@ -222,7 +224,7 @@ namespace LiteEntitySystem.Internal
                 : player.CurrentServerTick;
             
             //overwrite IsSyncEnabled for each player
-            SyncGroup enabledSyncGroups = RefreshSyncGroupsVariable(player, new Span<byte>(_latestEntityData));
+            SyncGroup enabledSyncGroups = RefreshSyncGroupsVariable(player, new Span<byte>(_latestEntityData, HeaderSize, (int)(_fullDataSize - HeaderSize)));
 
             fixed (byte* lastEntityData = _latestEntityData) //make diff
             {

@@ -35,8 +35,8 @@ namespace Code.Shared
         private bool _projectileFire;
         
         public byte Health => _health;
-        public Vector2 Position => _position;
-        public float Rotation => _rotation.Value;
+        public Vector2 Position => _position.InterpolatedValue;
+        public float Rotation => _rotation.InterpolatedValue;
         
         public GameObject UnityObject;
         public GameObject View;
@@ -63,7 +63,7 @@ namespace Code.Shared
             _rigidbody.isKinematic = true;
             _collider.isTrigger = true;
             _collider.size = Vector2.one * 0.66f;
-            UnityObject.AddComponent<BasePlayerView>().AttachedPlayer = this;
+            UnityObject.AddComponent<PlayerProxy>().AttachedPlayer = this;
             Debug.Log($"Player joined: {Name.Value}");
         }
 
@@ -177,7 +177,7 @@ namespace Code.Shared
                     for (int i = 0; i < hitsCount; i++)
                     {
                         ref var hit = ref RaycastHits[i];
-                        if (hit.transform.TryGetComponent<BasePlayerView>(out var playerProxy) && playerProxy.AttachedPlayer != this )
+                        if (hit.transform.TryGetComponent<PlayerProxy>(out var playerProxy) && playerProxy.AttachedPlayer != this )
                         {
                             if (EntityManager.InNormalState)
                                 ExecuteRPC(_hitRemoteCall, new HitPacket { Position = hit.point });

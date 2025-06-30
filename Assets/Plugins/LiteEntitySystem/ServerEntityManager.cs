@@ -9,10 +9,24 @@ using LiteNetLib.Utils;
 
 namespace LiteEntitySystem
 {
+    /// <summary>
+    /// Rate at which server sends state packets
+    /// </summary>
     public enum ServerSendRate : byte
     {
+        /// <summary>
+        /// Send rate is equal to Tickrate
+        /// </summary>
         EqualToFPS = 1,
+        
+        /// <summary>
+        /// Send rate is Tickrate / 2
+        /// </summary>
         HalfOfFPS = 2,
+        
+        /// <summary>
+        /// Send rate is Tickrate / 3
+        /// </summary>
         ThirdOfFPS = 3
     }
 
@@ -848,6 +862,9 @@ namespace LiteEntitySystem
                 //old freed entity
                 return;
             }
+            if(entity is AiControllerLogic)
+               return;
+            
             _changedEntities.Add(entity);
             _stateSerializers[entity.Id].UpdateFieldValue(fieldId, _minimalTick, _tick, ref newValue);
         }

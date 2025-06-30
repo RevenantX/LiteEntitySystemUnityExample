@@ -87,7 +87,7 @@ namespace Code.Shared
             for (int i = 0; i < hitsCount; i++)
             {
                 ref var hit = ref RaycastHits[i];
-                if (hit.transform.TryGetComponent<BasePlayerView>(out var playerProxy) && playerProxy.AttachedPlayer.SharedReference != ShooterPlayer )
+                if (hit.transform.TryGetComponent<PlayerProxy>(out var playerProxy) && playerProxy.AttachedPlayer.SharedReference != ShooterPlayer )
                 {
                     playerProxy.AttachedPlayer.Damage(25);
                     if (EntityManager.IsClient && EntityManager.InNormalState)
@@ -107,7 +107,7 @@ namespace Code.Shared
 
         protected override void VisualUpdate()
         {
-            UnityObject.transform.position = Position.Value;
+            UnityObject.transform.position = Position.InterpolatedValue;
         }
     }
 }

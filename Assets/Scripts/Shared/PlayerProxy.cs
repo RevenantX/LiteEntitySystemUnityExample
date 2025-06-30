@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace Code.Shared
 {
-    public class BasePlayerView : MonoBehaviour
+    public class PlayerProxy : MonoBehaviour
     {
         public BasePlayer AttachedPlayer;
 

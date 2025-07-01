@@ -5,8 +5,28 @@ using LiteEntitySystem.Internal;
 
 namespace LiteEntitySystem.Extensions
 {
-    public class SyncList<T> : SyncableField, ICollection<T>, IReadOnlyList<T> where T : unmanaged
+    public class SyncList<T> : SyncableFieldCustomRollback, ICollection<T>, IReadOnlyList<T> where T : unmanaged
     {
+        public struct SyncListEnumerator : IEnumerator<T>
+        {
+            private readonly T[] _data;
+            private readonly int _count;
+            private int _index;
+            
+            public SyncListEnumerator(T[] data, int count)
+            {
+                _data = data;
+                _count = count;
+                _index = -1;
+            }
+            
+            public bool MoveNext() => ++_index < _count;
+            public void Reset() =>  _index = -1;
+            public T Current => _index >= 0 && _index < _data.Length ? _data[_index] : default;
+            object IEnumerator.Current => Current;
+            public void Dispose() {}
+        }
+        
         struct SetValueData
         {
             public int Index;
@@ -28,8 +48,6 @@ namespace LiteEntitySystem.Extensions
         private static RemoteCallSpan<T> _initAction;
         private static RemoteCall<SetValueData> _setAction;
         
-        public override bool IsRollbackSupported => true;
-
         protected internal override void BeforeReadRPC()
         {
             _serverData ??= new T[_data.Length];
@@ -106,12 +124,14 @@ namespace LiteEntitySystem.Extensions
             _data[_count] = item;
             _count++;
             ExecuteRPC(_addAction, item);
+            MarkAsChanged();
         }
         
         public void Clear()
         {
             _count = 0;
             ExecuteRPC(_clearAction);
+            MarkAsChanged();
         }
 
         public bool Contains(T item)
@@ -158,6 +178,7 @@ namespace LiteEntitySystem.Extensions
             _data[_count - 1] = default;
             _count--;
             ExecuteRPC(_removeAtAction, index);
+            MarkAsChanged();
         }
         
         public T this[int index]
@@ -170,19 +191,10 @@ namespace LiteEntitySystem.Extensions
             }
         }
 
-        public IEnumerator<T> GetEnumerator()
-        {
-            int index = 0;
-            while (index < _count)
-            {
-                yield return _data[index];
-                index++;
-            }
-        }
+        public SyncListEnumerator GetEnumerator() => new(_data, _count);
 
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
+        IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

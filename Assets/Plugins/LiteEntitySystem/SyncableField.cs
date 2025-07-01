@@ -43,11 +43,6 @@ namespace LiteEntitySystem
         protected internal bool IsServer => _parentEntity != null && _parentEntity.IsServer;
 
         /// <summary>
-        /// Is supported rollback by this syncable field
-        /// </summary>
-        public virtual bool IsRollbackSupported => false;
-
-        /// <summary>
         /// Owner of this syncable field
         /// </summary>
         protected InternalEntity ParentEntity => _parentEntity;
@@ -67,21 +62,6 @@ namespace LiteEntitySystem
         /// Owner of this syncable field casted to EntityLogic
         /// </summary>
         protected EntityLogic ParentEntityLogic => _parentEntity as EntityLogic;
-        
-        protected internal virtual void BeforeReadRPC()
-        {
-            
-        }
-
-        protected internal virtual void AfterReadRPC()
-        {
-            
-        }
-
-        protected internal virtual void OnRollback()
-        {
-            
-        }
 
         protected internal virtual void RegisterRPC(ref SyncableRPCRegistrator r)
         {
@@ -118,5 +98,26 @@ namespace LiteEntitySystem
                 _parentEntity.ServerManager.AddRemoteCall<byte>(_parentEntity, writer.RawData.Slice(0, writer.Position), (ushort)(rpc.Id + RPCOffset), _executeFlags);
             }
         }
+    }
+
+    /// <summary>
+    /// Syncable fields with custom rollback notifications and implementation
+    /// </summary>
+    public abstract class SyncableFieldCustomRollback : SyncableField
+    {
+        /// <summary>
+        /// Marks that SyncableField was modified on client and add parent entity to Rollback list
+        /// </summary>
+        protected void MarkAsChanged()
+        {
+            if(ParentEntity != null && ParentEntity.IsClient)
+                ParentEntity.ClientManager.MarkEntityChanged(ParentEntity);
+        }
+        
+        protected internal abstract void BeforeReadRPC();
+
+        protected internal abstract void AfterReadRPC();
+
+        protected internal abstract void OnRollback();
     }
 }

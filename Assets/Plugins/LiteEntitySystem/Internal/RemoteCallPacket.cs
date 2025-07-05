@@ -20,12 +20,15 @@ namespace LiteEntitySystem.Internal
 
         public int TotalSize => RpcDeltaCompressor.MaxDeltaSize + Header.ByteCount;
         
-        public const int ReserverdRPCsCount = 3;
+        public const int ReserverdRPCsCount = 4;
+        
         public const ushort NewRPCId = 0;
         public const ushort ConstructRPCId = 1;
         public const ushort DestroyRPCId = 2;
+        public const ushort LateConstructedRPCId = 3;
 
-        //can be static because doesnt use any buffers
+        //can be static because doesn't use any buffers
+        //used for header delta compression
         private static DeltaCompressor RpcDeltaCompressor = new(Utils.SizeOfStruct<RPCHeader>());
         
         public static void InitReservedRPCs(List<RpcFieldInfo> rpcCache)
@@ -49,10 +52,14 @@ namespace LiteEntitySystem.Internal
         public unsafe int WriteTo(byte* resultData, ref int position, ref RPCHeader prevHeader)
         {
             int headerEncodedSize = RpcDeltaCompressor.Encode(ref prevHeader, ref Header, new Span<byte>(resultData + position, RpcDeltaCompressor.MaxDeltaSize));
-            fixed (byte* rpcData = Data)
-                RefMagic.CopyBlock(resultData + headerEncodedSize + position, rpcData, Header.ByteCount);
+            if (Header.ByteCount > 0)
+            {
+                fixed (byte* rpcData = Data)
+                    RefMagic.CopyBlock(resultData + headerEncodedSize + position, rpcData, Header.ByteCount);
+            }
             position += headerEncodedSize + Header.ByteCount;
             prevHeader = Header;
+            //Logger.Log($"Sending: EID: {Header.EntityId}, Id: {Header.Id}, BC: {Header.ByteCount}");
             return headerEncodedSize + Header.ByteCount;
         }
         
@@ -64,7 +71,8 @@ namespace LiteEntitySystem.Internal
             Header.Tick = tick;
             Header.Id = rpcId;
             Header.ByteCount = byteCount;
-            Utils.ResizeOrCreate(ref Data, byteCount);
+            if(byteCount > 0)
+                Utils.ResizeOrCreate(ref Data, byteCount);
         }
     }
 }

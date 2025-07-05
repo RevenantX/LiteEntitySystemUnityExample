@@ -6,7 +6,6 @@ namespace LiteEntitySystem.Internal
     {
         public static readonly int HeaderSize = Utils.SizeOfStruct<EntityDataHeader>();
         public const int DiffHeaderSize = 4;
-        public const int MaxStateSize = 32767; //half of ushort
         
         private const int TickBetweenFullRefresh = ushort.MaxValue/5;
         
@@ -38,6 +37,10 @@ namespace LiteEntitySystem.Internal
             _fieldsCount = classData.FieldsCount;
             _fieldsFlagsSize = classData.FieldsFlagsSize;
             _fullDataSize = (uint)(HeaderSize + classData.FixedFieldsSize);
+
+            if (GetMaximumDiffSize() > ushort.MaxValue)
+                throw new Exception($"Entity classId: {classData.ClassId - 1} is too big: {GetMaximumDiffSize()} > {ushort.MaxValue}");
+            
             _flags = classData.Flags;
             _latestEntityData = ioBuffer;
             
@@ -89,9 +92,10 @@ namespace LiteEntitySystem.Internal
                 _lastRefreshedTime = currentTime;
             }
         }
-
-        public int GetMaximumSize() =>
-            _entity == null ? 0 : (int)_fullDataSize + sizeof(ushort) + sizeof(ushort) + _fieldsFlagsSize;
+        
+        //size of all values (in worst case), DiffHeader, and size of bitfield with information about fields exist or not 
+        public int GetMaximumDiffSize() =>
+            _entity == null ? 0 : (int)(_fullDataSize - HeaderSize) + DiffHeaderSize + _fieldsFlagsSize;
 
         public void MakeNewRPC()
         {
@@ -102,36 +106,19 @@ namespace LiteEntitySystem.Internal
                 ExecuteFlags.SendToAll);
         }
         
-        //refresh construct rpc with latest values (old behaviour)
-        public unsafe void RefreshConstructedRPC(RemoteCallPacket packet)
+        //make late construct rpc with latest values (old behaviour)
+        public unsafe void MakeLateConstruct(RemoteCallPacket packet)
         {
-            fixed (byte* sourceData = _latestEntityData, rawData = packet.Data)
-            {
-                RefMagic.CopyBlock(rawData, sourceData + HeaderSize, (uint)(_fullDataSize - HeaderSize));
-            }
+            
+            
+            var entityDataSpan = new Span<byte>(_latestEntityData, HeaderSize, (int)(_fullDataSize - HeaderSize));
+            _entity.ServerManager.AddRemoteCall(
+                _entity,
+                (ReadOnlySpan<byte>)entityDataSpan,
+                RemoteCallPacket.LateConstructedRPCId,
+                ExecuteFlags.SendToAll);
         }
         
-        public SyncGroup RefreshSyncGroupsVariable(NetPlayer player, Span<byte> target)
-        {
-            SyncGroup enabledGroups = SyncGroup.All;
-            if (_entity is EntityLogic el)
-            {
-                if (player.EntitySyncInfo.TryGetValue(el, out var syncGroupData))
-                {
-                    enabledGroups = syncGroupData.EnabledGroups;
-                    _fieldChangeTicks[el.IsSyncEnabledFieldId] = syncGroupData.LastChangedTick;
-                }
-                else
-                {
-                    //if no data it "never" changed
-                    _fieldChangeTicks[el.IsSyncEnabledFieldId] = _versionChangedTick;
-                }
-                target[_fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledGroups;
-            }
- 
-            return enabledGroups;
-        }
-
         public void MakeConstructedRPC(NetPlayer player)
         {
             //make on sync
@@ -146,21 +133,26 @@ namespace LiteEntitySystem.Internal
             {
                 Logger.LogError($"Exception in OnSyncRequested: {e}");
             }
+            
+            var constructedRpc =
+                _entity.ServerManager.GetRPCFromPool(
+                    _entity,
+                    RemoteCallPacket.ConstructRPCId,
+                    (ushort)GetMaximumDiffSize());
 
-            //it can be null on entity creation
-            var entityDataSpan = new Span<byte>(_latestEntityData, HeaderSize, (int)(_fullDataSize - HeaderSize));
-            
-            if(player != null)
-                RefreshSyncGroupsVariable(player, entityDataSpan);
-            
-            //actual on constructed rpc
-            _entity.ServerManager.AddRemoteCall(
-                _entity,
-                (ReadOnlySpan<byte>)entityDataSpan,
-                RemoteCallPacket.ConstructRPCId,
-                ExecuteFlags.SendToAll);
-            //Logger.Log($"Added constructed RPC: {_entity}");
+            unsafe
+            {
+                fixed (byte* rawData = constructedRpc.Data)
+                {
+                    int resultPosition = 0;
+                    MakeDiff(player, rawData, ref resultPosition, false);
+                    constructedRpc.Header.ByteCount = (ushort)resultPosition;
+                    //Logger.Log($"Server send CRPCData: {Utils.BytesToHexString(new ReadOnlySpan<byte>(rawData, resultPosition))}");
+                }
+            }
+            _entity.ServerManager.EnqueuePendingRPC(constructedRpc);
         }
+        
 
         public void MakeDestroyedRPC(ushort tick)
         {
@@ -187,7 +179,7 @@ namespace LiteEntitySystem.Internal
             _latestEntityData = null;
         }
 
-        public unsafe bool MakeDiff(NetPlayer player, ushort minimalTick, byte* resultData, ref int position)
+        public unsafe bool MakeDiff(NetPlayer player, byte* resultData, ref int position, bool writeOnlyChanged)
         {
             if (_entity == null)
             {
@@ -196,14 +188,8 @@ namespace LiteEntitySystem.Internal
             }
             
             //skip known
-            if (Utils.SequenceDiff(LastChangedTick, player.CurrentServerTick) <= 0)
+            if (writeOnlyChanged && Utils.SequenceDiff(LastChangedTick, player.CurrentServerTick) <= 0)
                 return false;
-            
-            if (_entity.IsDestroyed && Utils.SequenceDiff(LastChangedTick, minimalTick) < 0)
-            {
-                Logger.LogError($"Should be removed before: {_entity}");
-                return false;
-            }
             
             //skip sync for non owners
             bool isOwned = _entity.InternalOwnerId.Value == player.Id;
@@ -217,14 +203,23 @@ namespace LiteEntitySystem.Internal
             *totalSize = 0;
             
             position += sizeof(ushort);
-
-            //if constructed not received send difference from constructed. Else from last state
-            ushort compareToTick = Utils.SequenceDiff(_versionChangedTick, player.CurrentServerTick) > 0
-                ? _versionChangedTick
-                : player.CurrentServerTick;
             
             //overwrite IsSyncEnabled for each player
-            SyncGroup enabledSyncGroups = RefreshSyncGroupsVariable(player, new Span<byte>(_latestEntityData, HeaderSize, (int)(_fullDataSize - HeaderSize)));
+            SyncGroup enabledSyncGroups = SyncGroup.All;
+            if (_entity is EntityLogic el)
+            {
+                if (player.EntitySyncInfo.TryGetValue(el, out var syncGroupData))
+                {
+                    enabledSyncGroups = syncGroupData.EnabledGroups;
+                    _fieldChangeTicks[el.IsSyncEnabledFieldId] = syncGroupData.LastChangedTick;
+                }
+                else
+                {
+                    //if no data it "never" changed
+                    _fieldChangeTicks[el.IsSyncEnabledFieldId] = _versionChangedTick;
+                }
+                _latestEntityData[HeaderSize + _fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledSyncGroups;
+            }
 
             fixed (byte* lastEntityData = _latestEntityData) //make diff
             {
@@ -246,14 +241,8 @@ namespace LiteEntitySystem.Internal
                         *fields = 0;
                     }
                     
-                    //skip very old
-                    if (Utils.SequenceDiff(_fieldChangeTicks[i], minimalTick) <= 0)
-                    {
-                        continue;
-                    }
-                    
                     //not actual
-                    if (Utils.SequenceDiff(_fieldChangeTicks[i], compareToTick) <= 0)
+                    if (writeOnlyChanged && Utils.SequenceDiff(_fieldChangeTicks[i], player.CurrentServerTick) <= 0)
                     {
                         //Logger.Log($"SkipOld: {field.Name}");
                         //old data
@@ -280,7 +269,7 @@ namespace LiteEntitySystem.Internal
                     //Logger.Log($"WF {_entity.GetType()} f: {_classData.Fields[i].Name}");
                 }
 
-                if (position <= positionBeforeDeltaCompression)
+                if (position == positionBeforeDeltaCompression)
                 {
                     position = startPos;
                     return false;
@@ -288,15 +277,8 @@ namespace LiteEntitySystem.Internal
             }
 
             //write totalSize
-            int resultSize = position - startPos;
             //Logger.Log($"rsz: {resultSize} e: {_entity.GetType()} eid: {_entity.Id}");
-            if (resultSize > MaxStateSize)
-            {
-                position = startPos;
-                Logger.LogError($"Entity {_entity.Id}, Class: {_entity.ClassId} state size is more than: {MaxStateSize}");
-                return false;
-            }
-            *totalSize = (ushort)resultSize;
+            *totalSize = (ushort)(position - startPos);
             return true;
         }
     }

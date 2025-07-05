@@ -193,7 +193,8 @@ namespace LiteEntitySystem
         private readonly Dictionary<Type, ushort> _registeredTypeIds = new();
         private readonly Dictionary<Type, ILocalSingleton> _localSingletons = new();
         private readonly Dictionary<Type, ILocalSingleton> _localSingletonBaseTypes = new();
-        private readonly Queue<InternalEntity> _entitiesToLateConstruct = new();
+        
+        protected readonly Queue<InternalEntity> EntitiesToLateConstruct = new();
 
         internal readonly InternalEntity[] EntitiesDict = new InternalEntity[MaxEntityCount+1];
         internal readonly EntityClassData[] ClassDataDict;
@@ -352,7 +353,7 @@ namespace LiteEntitySystem
             foreach (var localSingleton in _localSingletons)
                 localSingleton.Value?.Destroy();
             
-            _entitiesToLateConstruct.Clear();
+            EntitiesToLateConstruct.Clear();
             AliveEntities.Clear();
             _localSingletons.Clear();
             _localSingletonBaseTypes.Clear();
@@ -559,7 +560,7 @@ namespace LiteEntitySystem
             {
                 AliveEntities.Add(e);
             }
-            _entitiesToLateConstruct.Enqueue(e);
+            EntitiesToLateConstruct.Enqueue(e);
 
             return true;
         }
@@ -634,13 +635,6 @@ namespace LiteEntitySystem
                 entity.DisableLagCompensation();
                 //entity.DebugPrint();
             }
-        }
-
-        protected void ExecuteLateConstruct()
-        {
-            foreach (var internalEntity in _entitiesToLateConstruct)
-                internalEntity.OnLateConstructed();
-            _entitiesToLateConstruct.Clear();
         }
 
         protected abstract void OnLogicTick();

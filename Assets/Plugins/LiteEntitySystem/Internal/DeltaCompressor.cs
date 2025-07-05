@@ -19,7 +19,7 @@ namespace LiteEntitySystem.Internal
         {
             Size = size;
             DeltaBits = Size / FieldsDivision + (Size % FieldsDivision == 0 ? 0 : 1);
-            MinDeltaSize = DeltaBits / 8 + (DeltaBits % 8 == 0 ? 0 : 1);
+            MinDeltaSize = (DeltaBits + 7) / 8;
             MaxDeltaSize = MinDeltaSize + Size;
             _firstFullData = null;
         }

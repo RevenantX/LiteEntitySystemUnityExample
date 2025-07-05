@@ -345,7 +345,9 @@ namespace LiteEntitySystem
                     _stateA.ExecuteRpcs(this, 0, true);
                     IsExecutingRPC = false;
                     int readerPosition = _stateA.DataOffset;
-                    ReadDiff(ref readerPosition);
+                    while (readerPosition < _stateA.DataOffset + _stateA.DataSize)
+                        ReadEntityDiff(rawData, ref readerPosition);
+                    
                     ExecuteSyncCalls(_stateA);
                     foreach (var lagCompensatedEntity in LagCompensatedEntities)
                         ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
@@ -496,7 +498,11 @@ namespace LiteEntitySystem
             _stateA.ExecuteRpcs(this, minimalTick, false);
             IsExecutingRPC = false;
             int readerPosition = _stateA.DataOffset;
-            ReadDiff(ref readerPosition);
+            fixed (byte* rawData = _stateA.Data)
+            {
+                while (readerPosition < _stateA.DataOffset + _stateA.DataSize)
+                    ReadEntityDiff(rawData, ref readerPosition);
+            }
             ExecuteSyncCalls(_stateA);
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
                 ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
@@ -823,7 +829,7 @@ namespace LiteEntitySystem
 
         internal unsafe void ReadNewRPC(ushort entityId, byte* rawData)
         {
-            //Logger.Log("NewRPC");
+            //Logger.Log($"NewRPC: {entityId}");
             var entityDataHeader = *(EntityDataHeader*)rawData;
             if (!IsEntityIdValid(entityId))
             {
@@ -884,41 +890,27 @@ namespace LiteEntitySystem
                 _entitiesToRollback.Clear();
             }
             
-            ExecuteLateConstruct();
+            foreach (var internalEntity in EntitiesToLateConstruct)
+                internalEntity.OnLateConstructed();
+            EntitiesToLateConstruct.Clear();
+            
             for (int i = 0; i < _syncCallsCount; i++)
                 _syncCalls[i].Execute(stateData);
             _syncCallsCount = 0;
         }
         
-        internal unsafe void ReadConstructRPC(ushort entityId, byte* rawData, int readerPosition)
+        internal unsafe void ReadConstructRPC(ushort entityId, byte* rawData)
         {
-            //Logger.Log("ConstructRPC");
-            if (!IsEntityIdValid(entityId))
+            //Logger.Log($"ConstructRPC: {entityId}");
+            int readerPosition = 0;
+            var entity = ReadEntityDiff(rawData, ref readerPosition);
+            if (entity == null)
             {
-                Logger.LogError($"Entity is invalid. Id {entityId}");
+                Logger.LogError("Error! Entity should not be null here");
                 return;
             }
-    
-            var entity = EntitiesDict[entityId];
-            bool writeInterpolationData = !entity.IsConstructed || entity.IsRemoteControlled;
-            ref var classData = ref entity.ClassData;
-            Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
-
-            fixed (byte* predictedData = classData.ClientPredictedData(entity))
-            {
-                for (int i = 0; i < classData.FieldsCount; i++)
-                {
-                    ref var field = ref classData.Fields[i];
-                    if (writeInterpolationData && field.Flags.HasFlagFast(SyncFlags.Interpolated))
-                        field.TypeProcessor.SetInterpValue(entity, field.Offset, rawData + readerPosition);
-                    
-                    if (field.ReadField(entity, rawData + readerPosition, predictedData))
-                        _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition, field.IntSize);
-
-                    //Logger.Log($"E {entity.Id} Field updated: {field.Name}");
-                    readerPosition += field.IntSize;
-                }
-            }
+            if(entity.Id != entityId)
+                Logger.LogError($"EntityIds not equal in construct?: {entity.Id}, {entityId}");
 
             //Construct and fast forward predicted entities
             if (ConstructEntity(entity) == false)
@@ -931,55 +923,55 @@ namespace LiteEntitySystem
                     return;
                 _entitiesToRollback.Enqueue(entityLogic);
             }
-
             //Logger.Log($"ConstructedEntity: {entityId}, pid: {entityLogic.PredictedId}");
         }
 
-        private unsafe void ReadDiff(ref int readerPosition)
+        private unsafe InternalEntity ReadEntityDiff(byte* rawData, ref int readerPosition)
         {
-            fixed (byte* rawData = _stateA.Data)
+            ushort totalSize = *(ushort*)(rawData + readerPosition);
+            int endPos = readerPosition + totalSize;
+            readerPosition += sizeof(ushort);
+            ushort entityId = *(ushort*)(rawData + readerPosition);
+            readerPosition += sizeof(ushort);
+            if (!IsEntityIdValid(entityId))
             {
-                while (readerPosition < _stateA.DataOffset + _stateA.DataSize)
+                Logger.LogError($"Entity is invalid. Id {entityId}");
+                return null;
+            }
+            var entity = EntitiesDict[entityId];
+            if (entity == null)
+            {
+                Logger.LogError($"Entity: {entityId} is null in ReadEntityDiff");
+                return null;
+            }
+
+            ref var classData = ref entity.ClassData;
+            readerPosition += classData.FieldsFlagsSize;
+            _changedEntities.Add(entity);
+            Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
+            int fieldsFlagsOffset = readerPosition - classData.FieldsFlagsSize;
+            fixed (byte* predictedData = classData.ClientPredictedData(entity))
+            {
+                for (int i = 0; i < classData.FieldsCount; i++)
                 {
-                    ushort totalSize = *(ushort*)(rawData + readerPosition);
-                    int endPos = readerPosition + totalSize;
-                    readerPosition += sizeof(ushort);
-                    ushort entityId = *(ushort*)(rawData + readerPosition);
-                    readerPosition += sizeof(ushort);
-                    if (!IsEntityIdValid(entityId))
-                        break;
-                    var entity = EntitiesDict[entityId];
-                    if (entity == null)
-                    {
-                        readerPosition = endPos;
+                    if (!Utils.IsBitSet(rawData + fieldsFlagsOffset, i))
                         continue;
-                    }
+                    ref var field = ref classData.Fields[i];
+                    if (field.ReadField(entity, rawData + readerPosition, predictedData))
+                        _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition,
+                            field.IntSize);
+                    
+                    //initial value same as 
+                    if (!entity.IsConstructed && field.Flags.HasFlagFast(SyncFlags.Interpolated))
+                        field.TypeProcessor.SetInterpValueFromCurrentValue(entity, field.Offset);
 
-                    ref var classData = ref entity.ClassData;
-                    readerPosition += classData.FieldsFlagsSize;
-                    _changedEntities.Add(entity);
-                    Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
-
-                    int fieldsFlagsOffset = readerPosition - classData.FieldsFlagsSize;
-                    fixed (byte* predictedData = classData.ClientPredictedData(entity))
-                    {
-                        for (int i = 0; i < classData.FieldsCount; i++)
-                        {
-                            if (!Utils.IsBitSet(rawData + fieldsFlagsOffset, i))
-                                continue;
-                            ref var field = ref classData.Fields[i];
-                            if (field.ReadField(entity, rawData + readerPosition, predictedData))
-                                _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition,
-                                    field.IntSize);
-
-                            //Logger.Log($"E {entity.Id} Field updated: {field.Name}");
-                            readerPosition += field.IntSize;
-                        }
-                    }
-
-                    readerPosition = endPos;
+                    //Logger.Log($"E {entity.Id} Field updated: {field.Name}");
+                    readerPosition += field.IntSize;
                 }
             }
+
+            readerPosition = endPos;
+            return entity;
         }
         
         private static bool IsEntityIdValid(ushort id)

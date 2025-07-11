@@ -713,6 +713,11 @@ namespace LiteEntitySystem
                 
                 entity.Update();
             }
+            
+            //late construct for local entities
+            foreach (var internalEntity in _entitiesToLateConstruct)
+                internalEntity.OnLateConstructed();
+            _entitiesToLateConstruct.Clear();
         }
 
         /// <summary>
@@ -905,9 +910,6 @@ namespace LiteEntitySystem
         
         private void ExecuteSyncCalls(ServerStateData stateData)
         {
-            foreach (var internalEntity in _entitiesToLateConstruct)
-                internalEntity.OnLateConstructed();
-            _entitiesToLateConstruct.Clear();
             for (int i = 0; i < _syncCallsCount; i++)
                 _syncCalls[i].Execute(stateData);
             _syncCallsCount = 0;

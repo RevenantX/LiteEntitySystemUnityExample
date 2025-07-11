@@ -348,7 +348,7 @@ namespace LiteEntitySystem
                     foreach (var lagCompensatedEntity in LagCompensatedEntities)
                         ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
                     
-                    Logger.Log($"[CEM] Got baseline sync. Assigned player id: {header.PlayerId}, Original: {_stateA.Size}, Tick: {header.Tick}, SendRate: {_serverSendRate}");
+                    Logger.Log($"[CEM] Got baseline sync. Assigned player id: {header.PlayerId}, Compressed: {inData.Length}, Original: {_stateA.Size}, Tick: {header.Tick}, SendRate: {_serverSendRate}");
                 }
                 else
                 {
@@ -980,7 +980,7 @@ namespace LiteEntitySystem
                             field.TypeProcessor.SetInterpValueFromCurrentValue(entity, field.Offset);
                     }
 
-                    Logger.Log($"E {entity.Id} Field updated: {field.Name} = {field.TypeProcessor.ToString(entity, field.Offset)}");
+                    //Logger.Log($"E {entity.Id} Field updated: {field.Name} = {field.TypeProcessor.ToString(entity, field.Offset)}");
                     readerPosition += field.IntSize;
                 }
             }

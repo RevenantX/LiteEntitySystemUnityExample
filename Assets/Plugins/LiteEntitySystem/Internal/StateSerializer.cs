@@ -213,7 +213,7 @@ namespace LiteEntitySystem.Internal
                     //if no data it "never" changed
                     _fieldChangeTicks[el.IsSyncEnabledFieldId] = _versionChangedTick;
                 }
-                _latestEntityData[_fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledSyncGroups;
+                _latestEntityData[HeaderSize + _fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledSyncGroups;
             }
 
             fixed (byte* lastEntityData = _latestEntityData) //make diff

@@ -283,7 +283,7 @@ namespace LiteEntitySystem.Internal
                                 case RemoteCallPacket.ConstructRPCId:
                                     //Logger.Log($"ConstructRPC for entity: {header.EntityId}, Size: {header.ByteCount}, RpcReadPos: {remoteCallInfo.DataOffset}, Tick: {header.Tick}");
                                     //Logger.Log($"CRPCData: {Utils.BytesToHexString(new ReadOnlySpan<byte>(rawData + remoteCallInfo.DataOffset, header.ByteCount))}");
-                                    _entityManager.ReadConstructRPC(header.EntityId, rawData, remoteCallInfo.DataOffset);
+                                    _entityManager.ReadConstructRPC(header.EntityId, rawData, remoteCallInfo.DataOffset, header.ByteCount);
                                     break;
                                 
                                 case RemoteCallPacket.DestroyRPCId:

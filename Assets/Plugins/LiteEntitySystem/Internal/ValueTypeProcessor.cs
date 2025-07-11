@@ -19,6 +19,8 @@ namespace LiteEntitySystem.Internal
         internal abstract void SetFromAndSync(InternalBaseClass obj, int offset, byte* data, MethodCallDelegate onSyncDelegate);
         internal abstract void SetInterpValue(InternalBaseClass obj, int offset, byte* data);
         internal abstract void SetInterpValueFromCurrentValue(InternalBaseClass obj, int offset);
+        internal abstract bool IsEqual(InternalBaseClass obj, int offset, byte* data);
+        internal abstract bool IsDefault(InternalBaseClass obj, int offset);
         internal abstract void WriteTo(InternalBaseClass obj, int offset, byte* data);
         internal abstract void LoadHistory(InternalBaseClass obj, int offset, byte* tempHistory, byte* historyA, byte* historyB, float lerpTime);
         internal abstract int GetHashCode(InternalBaseClass obj, int offset);
@@ -59,6 +61,12 @@ namespace LiteEntitySystem.Internal
         
         internal sealed override void SetInterpValueFromCurrentValue(InternalBaseClass obj, int offset) =>
             RefMagic.SyncVarSetInterpFromCurrent<T, SyncVar<T>>(obj, offset);
+
+        internal sealed override bool IsEqual(InternalBaseClass obj, int offset, byte* data) =>
+            RefMagic.GetFieldValue<SyncVar<T>>(obj, offset).Equals(*(T*)data);
+        
+        internal sealed override bool IsDefault(InternalBaseClass obj, int offset) =>
+            RefMagic.GetFieldValue<SyncVar<T>>(obj, offset).Equals(default);
 
         internal sealed override void WriteTo(InternalBaseClass obj, int offset, byte* data) =>
             *(T*)data = RefMagic.GetFieldValue<SyncVar<T>>(obj, offset);

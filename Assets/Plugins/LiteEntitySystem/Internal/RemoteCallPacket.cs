@@ -51,8 +51,11 @@ namespace LiteEntitySystem.Internal
         public unsafe int WriteTo(byte* resultData, ref int position, ref RPCHeader prevHeader)
         {
             int headerEncodedSize = RpcDeltaCompressor.Encode(ref prevHeader, ref Header, new Span<byte>(resultData + position, RpcDeltaCompressor.MaxDeltaSize));
-            fixed (byte* rpcData = Data)
-                RefMagic.CopyBlock(resultData + headerEncodedSize + position, rpcData, Header.ByteCount);
+            if (Header.ByteCount > 0)
+            {
+                fixed (byte* rpcData = Data)
+                    RefMagic.CopyBlock(resultData + headerEncodedSize + position, rpcData, Header.ByteCount);
+            }
             position += headerEncodedSize + Header.ByteCount;
             prevHeader = Header;
             return headerEncodedSize + Header.ByteCount;
@@ -66,7 +69,8 @@ namespace LiteEntitySystem.Internal
             Header.Tick = tick;
             Header.Id = rpcId;
             Header.ByteCount = byteCount;
-            Utils.ResizeOrCreate(ref Data, byteCount);
+            if(byteCount > 0)
+                Utils.ResizeOrCreate(ref Data, byteCount);
         }
     }
 }

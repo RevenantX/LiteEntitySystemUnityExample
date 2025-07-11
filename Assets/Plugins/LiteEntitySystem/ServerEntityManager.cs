@@ -832,11 +832,11 @@ namespace LiteEntitySystem
                     return false;
 
                 var entity = EntitiesDict[rpcNode.Header.EntityId];
-                if (!rpcNode.AllowToSendForPlayer(player.Id, entity.OwnerId))
+                if (!rpcNode.AllowToSendForPlayer(player.Id, entity.InternalOwnerId.Value))
                     return false;
 
                 //check sync groups
-                if (entity.OwnerId != player.Id)
+                if (entity.InternalOwnerId.Value != player.Id)
                 {
                     if (entity is EntityLogic el && 
                         player.EntitySyncInfo.TryGetValue(el, out var syncGroups) &&
@@ -847,15 +847,25 @@ namespace LiteEntitySystem
                         return false;
                     }
                 }
-                
-                if (rpcNode.Header.Id == RemoteCallPacket.ConstructRPCId)
-                    stateSerializer.RefreshSyncGroupsVariable(player, new Span<byte>(rpcNode.Data));
+
+                switch (rpcNode.Header.Id)
+                {
+                    case RemoteCallPacket.NewOwnedRPCId when entity.InternalOwnerId.Value != player.Id:
+                        rpcNode.Header.Id = RemoteCallPacket.NewRPCId;
+                        break;
+                    case RemoteCallPacket.NewRPCId when entity.InternalOwnerId.Value == player.Id:
+                        rpcNode.Header.Id = RemoteCallPacket.NewOwnedRPCId;
+                        break;
+                    case RemoteCallPacket.ConstructRPCId:
+                        stateSerializer.RefreshSyncGroupsVariable(player, new Span<byte>(rpcNode.Data));
+                        break;
+                }
 
                 return true;
             }       
         }
         
-        internal override void EntityFieldChanged<T>(InternalEntity entity, ushort fieldId, ref T newValue)
+        internal override unsafe void EntityFieldChanged<T>(InternalEntity entity, ushort fieldId, ref T newValue, ref T oldValue)
         {
             if (entity.IsRemoved)
             {
@@ -867,6 +877,13 @@ namespace LiteEntitySystem
             
             _changedEntities.Add(entity);
             _stateSerializers[entity.Id].UpdateFieldValue(fieldId, _minimalTick, _tick, ref newValue);
+
+            ref var fieldInfo = ref entity.ClassData.Fields[fieldId];
+            if ((fieldInfo.OnSyncFlags & BindOnChangeFlags.ExecuteOnServer) != 0)
+            {
+                T value = oldValue;
+                fieldInfo.OnSync(entity, new ReadOnlySpan<byte>(&value, sizeof(T)));
+            }
         }
 
         internal void MarkFieldsChanged(InternalEntity entity, SyncFlags onlyWithFlags)

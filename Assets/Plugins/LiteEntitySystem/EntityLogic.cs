@@ -169,17 +169,46 @@ namespace LiteEntitySystem
             EntityManager.DisableLagCompensation();
         
         /// <summary>
-        /// Get synchronized seed for random generators based on current tick. Can be used for rollback or inside RPCs
+        /// Gets owner tick on client if entity is owned, and on server it returns owner tick.
+        /// Useful as seed for random generators based on current tick.
         /// </summary>
-        /// <returns>current tick depending on entity manager state (IsExecutingRPC and InRollBackState)</returns>
-        public int GetFrameSeed() =>
-            EntityManager.IsClient
-                ? (ClientManager.IsExecutingRPC ? ClientManager.CurrentRPCTick : EntityManager.Tick)
-                : (InternalOwnerId.Value == EntityManager.ServerPlayerId ? EntityManager.Tick : ServerManager.GetPlayer(InternalOwnerId).LastProcessedTick);
+        /// <returns>true if owner tick accessible, false if you trying get remote player tick</returns>
+        public bool TryGetOwnerTick(out ushort tick)
+        {
+            if (EntityManager.IsClient)
+            {
+                if (ClientManager.InternalPlayerId == InternalOwnerId.Value)
+                {
+                    tick = EntityManager.Tick;
+                    return true;
+                }
+
+                if (InternalOwnerId.Value == EntityManager.ServerPlayerId)
+                {
+                    tick = ClientManager.ServerTick;
+                    return true;
+                }
+          
+                //else
+                tick = EntityManager.Tick;
+                return false;
+            }
+            
+            //Server
+            if(InternalOwnerId.Value == EntityManager.ServerPlayerId)
+            {
+                tick = EntityManager.Tick;
+                return true;
+            }
+
+            tick = ServerManager.GetPlayer(InternalOwnerId).LastProcessedTick;
+            return true;
+        }
         
         /// <summary>
         /// Create predicted entity (like projectile) that will be replaced by server entity if prediction is successful
         /// Should be called also in rollback mode
+        /// Don't call this method inside Server->Client RPC! This will break many things.
         /// </summary>
         /// <typeparam name="T">Entity type</typeparam>
         /// <param name="initMethod">Method that will be called after entity constructed</param>
@@ -406,11 +435,9 @@ namespace LiteEntitySystem
             
         }
 
-        internal void RefreshOwnerInfo(EntityLogic oldOwner)
+        private void OnOwnerChanged(byte oldPlayerId)
         {
-            if (EntityManager.IsServer || IsLocal)
-                return;
-            if(oldOwner != null && oldOwner.InternalOwnerId.Value == EntityManager.InternalPlayerId)
+            if(oldPlayerId == EntityManager.InternalPlayerId)
                 ClientManager.RemoveOwned(this);
             if(InternalOwnerId.Value == EntityManager.InternalPlayerId)
                 ClientManager.AddOwned(this);
@@ -420,7 +447,8 @@ namespace LiteEntitySystem
         {
             base.RegisterRPC(ref r);
             
-            r.BindOnChange<SyncGroup, EntityLogic>(ref _isSyncEnabled, (e, _) => e.OnSyncGroupsChanged(e._isSyncEnabled.Value));
+            r.BindOnChange<EntityLogic, SyncGroup>(ref _isSyncEnabled, (e, _) => e.OnSyncGroupsChanged(e._isSyncEnabled.Value));
+            r.BindOnChange(this, ref InternalOwnerId, OnOwnerChanged);
             
             r.CreateRPCAction<EntityLogic, ChangeParentData>(
                 (e, data) =>
@@ -429,7 +457,6 @@ namespace LiteEntitySystem
                     {
                         case ChangeType.Parent:
                             var oldOwner = e.EntityManager.GetEntityById<EntityLogic>(data.Ref);
-                            e.RefreshOwnerInfo(oldOwner);
                             e.OnParentChanged(oldOwner);
                             break;
                         case ChangeType.ChildAdd:

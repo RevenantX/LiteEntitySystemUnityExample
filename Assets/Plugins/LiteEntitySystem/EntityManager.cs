@@ -101,6 +101,9 @@ namespace LiteEntitySystem
         /// </summary>
         public const int MaxLocalEntityCount = MaxEntityCount - MaxSyncedEntityCount;
         
+        /// <summary>
+        /// Server player Id - always 0 and reserved
+        /// </summary>
         public const byte ServerPlayerId = 0;
 
         /// <summary>
@@ -168,6 +171,9 @@ namespace LiteEntitySystem
         /// </summary>
         public byte PlayerId => InternalPlayerId;
 
+        /// <summary>
+        /// EntityManager packets header byte (can be used to distinguish LES packets from custom made)
+        /// </summary>
         public readonly byte HeaderByte;
         
         public bool InRollBackState => UpdateMode == UpdateMode.PredictionRollback;
@@ -177,7 +183,16 @@ namespace LiteEntitySystem
         internal const int MaxParts = 256;
         private const int MaxTicksPerUpdate = 5;
 
+        /// <summary>
+        /// Delta time between visual Updates
+        /// </summary>
         public double VisualDeltaTime { get; private set; }
+        
+        /// <summary>
+        /// Delta time between visual Updates (float)
+        /// </summary>
+        public float VisualDeltaTimeF => (float)VisualDeltaTime;
+        
         public const int MaxPlayers = byte.MaxValue-1;
         
         protected ushort _tick;
@@ -529,11 +544,11 @@ namespace LiteEntitySystem
             return entity;
         }
 
-        protected bool ConstructEntity(InternalEntity e)
+        protected void ConstructEntity(InternalEntity e)
         {
             if (e.IsConstructed)
-                return false;
-            e.IsConstructed = true;
+                return;
+            e.ConstructInternal();
             
             ref var classData = ref ClassDataDict[e.ClassId];
             if (classData.IsSingleton)
@@ -560,8 +575,6 @@ namespace LiteEntitySystem
                 AliveEntities.Add(e);
             }
             _entitiesToLateConstruct.Enqueue(e);
-
-            return true;
         }
 
         protected static bool IsEntityLagCompensated(InternalEntity e)
@@ -605,7 +618,7 @@ namespace LiteEntitySystem
                 EntitiesDict[e.Id] = null;
             EntitiesCount--;
             ClassDataDict[e.ClassId].ReleaseDataCache(e);
-            e.IsRemoved = true;
+            e.Remove();
             //Logger.Log($"{Mode} - RemoveEntity: {e.Id}");
         }
         
@@ -645,7 +658,7 @@ namespace LiteEntitySystem
 
         protected abstract void OnLogicTick();
         
-        internal abstract void EntityFieldChanged<T>(InternalEntity entity, ushort fieldId, ref T newValue)
+        internal abstract void EntityFieldChanged<T>(InternalEntity entity, ushort fieldId, ref T newValue, ref T oldValue)
             where T : unmanaged;
 
         /// <summary>

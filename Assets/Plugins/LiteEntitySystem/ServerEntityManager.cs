@@ -668,9 +668,13 @@ namespace LiteEntitySystem
                             if(ShouldSendRPC(rpcNode, player))
                                 rpcNode.WriteTo(packetBuffer, ref originalLength, ref prevRpcHeader);
                         rpcSize = originalLength;
-                        
+
                         foreach (var e in GetEntities<InternalEntity>())
-                            _stateSerializers[e.Id].MakeDiff(player, packetBuffer, ref originalLength, DiffType.Normal);
+                        {
+                            int diffSize = _stateSerializers[e.Id].MakeDiff(player, packetBuffer + originalLength);
+                            if (diffSize > 0)
+                                originalLength += diffSize;
+                        }
                     }
                     
                     //set header
@@ -762,8 +766,10 @@ namespace LiteEntitySystem
                         continue;
                     }
 
-                    if (stateSerializer.MakeDiff(player, packetBuffer, ref writePosition, DiffType.Normal))
+                    int diffSize = stateSerializer.MakeDiff(player, packetBuffer + writePosition);
+                    if (diffSize > 0)
                     {
+                        writePosition += diffSize;
                         CheckOverflowAndSend(player, header, packetBuffer, ref writePosition, maxPartSize);
                         //if request baseline break entity loop
                         if(player.State == NetPlayerState.RequestBaseline)

@@ -342,7 +342,11 @@ namespace LiteEntitySystem
                     _stateA.ExecuteRpcs(0, RPCExecuteMode.FirstSync);
                     int readerPosition = _stateA.DataOffset;
                     while (readerPosition < _stateA.DataOffset + _stateA.DataSize)
-                        ReadEntityDiff(rawData, ref readerPosition);
+                    {
+                        var diffHeader = (EntityDiffHeader*)(rawData + readerPosition);
+                        readerPosition += StateSerializer.DiffHeaderSize;
+                        ReadEntityDiff(diffHeader->EntityId, diffHeader->Size, rawData, ref readerPosition);
+                    }
  
                     ExecuteSyncCalls(_stateA);
                     foreach (var lagCompensatedEntity in LagCompensatedEntities)
@@ -558,7 +562,11 @@ namespace LiteEntitySystem
             fixed (byte* rawData = _stateA.Data)
             {
                 while (readerPosition < _stateA.DataOffset + _stateA.DataSize)
-                    ReadEntityDiff(rawData, ref readerPosition);
+                {
+                    var diffHeader = (EntityDiffHeader*)(rawData + readerPosition);
+                    readerPosition += StateSerializer.DiffHeaderSize;
+                    ReadEntityDiff(diffHeader->EntityId, diffHeader->Size, rawData, ref readerPosition);
+                }
             }
             ExecuteSyncCalls(_stateA);
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
@@ -904,7 +912,7 @@ namespace LiteEntitySystem
                 //Logger.Log($"Client receive CRPCData: {entityId}, sz {size}: {Utils.BytesToHexString(new ReadOnlySpan<byte>(rawData + readerPosition, size))}");
                 
                 //Logger.Log($"ConstructRPC: {entityId}");
-                entity = ReadEntityDiff(rawData, ref readerPosition);
+                entity = ReadEntityDiff(entityId, (ushort)size, rawData, ref readerPosition);
                 if (entity == null)
                 {
                     Logger.LogError("Error! Entity should not be null here");
@@ -923,13 +931,9 @@ namespace LiteEntitySystem
             ConstructEntity(entity);
         }
 
-        private unsafe InternalEntity ReadEntityDiff(byte* rawData, ref int readerPosition)
+        private unsafe InternalEntity ReadEntityDiff(ushort entityId, ushort totalSize, byte* rawData, ref int readerPosition)
         {
-            ushort totalSize = *(ushort*)(rawData + readerPosition);
             int endPos = readerPosition + totalSize;
-            readerPosition += sizeof(ushort);
-            ushort entityId = *(ushort*)(rawData + readerPosition);
-            readerPosition += sizeof(ushort);
             if (!IsEntityIdValid(entityId))
             {
                 Logger.LogError($"Entity is invalid. Id {entityId}");

@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 
 namespace LiteEntitySystem.Internal
 {
@@ -8,11 +9,18 @@ namespace LiteEntitySystem.Internal
         Constructed,
         LateConstruct
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct EntityDiffHeader
+    {
+        public ushort Size;
+        public ushort EntityId;
+    }
     
     internal struct StateSerializer
     {
         public static readonly int HeaderSize = Utils.SizeOfStruct<EntityDataHeader>();
-        public const int DiffHeaderSize = 4;
+        public static readonly int DiffHeaderSize = Utils.SizeOfStruct<EntityDiffHeader>();
         public const int MaxStateSize = ushort.MaxValue;
         
         private const int TickBetweenFullRefresh = ushort.MaxValue/5;
@@ -136,9 +144,7 @@ namespace LiteEntitySystem.Internal
             
             fixed (byte* rawData = constructedRpc.Data)
             {
-                int resultPosition = 0;
-                MakeDiff(player, rawData, ref resultPosition, DiffType.Constructed);
-                constructedRpc.Header.ByteCount = (ushort)resultPosition;
+                constructedRpc.Header.ByteCount = MakeDiffInternal(player, rawData, DiffType.Constructed);
                 //Logger.Log($"Server send CRPCData {_entity.Id}, sz {resultPosition}: {Utils.BytesToHexString(new ReadOnlySpan<byte>(rawData, resultPosition))}");
             }
             _entity.ServerManager.EnqueuePendingRPC(constructedRpc);
@@ -169,30 +175,36 @@ namespace LiteEntitySystem.Internal
             _latestEntityData = null;
         }
 
-        public unsafe bool MakeDiff(NetPlayer player, byte* resultData, ref int position, DiffType diffType)
+        public unsafe int MakeDiff(NetPlayer player, byte* resultData)
+        {
+            ushort size = MakeDiffInternal(player, resultData + DiffHeaderSize, DiffType.Normal);
+            if (size <= 0) 
+                return 0;
+            
+            *(EntityDiffHeader*)resultData = new EntityDiffHeader
+            {
+                Size = size,
+                EntityId = _entity.Id
+            };
+            return size + DiffHeaderSize;
+        }
+
+        private unsafe ushort MakeDiffInternal(NetPlayer player, byte* resultData, DiffType diffType)
         {
             if (_entity == null)
             {
                 Logger.LogWarning("MakeDiff on freed?");
-                return false;
+                return 0;
             }
             
             //skip known
             if (diffType == DiffType.Normal && Utils.SequenceDiff(LastChangedTick, player.CurrentServerTick) <= 0)
-                return false;
+                return 0;
             
             //skip sync for non owners
             bool isOwned = _entity.InternalOwnerId.Value == player.Id;
             if (_flags.HasFlagFast(EntityFlags.OnlyForOwner) && !isOwned)
-                return false;
-            
-            //make diff
-            int startPos = position;
-            //at 0 ushort
-            ushort* totalSize = (ushort*)(resultData + startPos);
-            *totalSize = 0;
-            
-            position += sizeof(ushort);
+                return 0;
 
             //if constructed not received send difference from constructed. Else from last state
             ushort compareToTick = Utils.SequenceDiff(_versionChangedTick, player.CurrentServerTick) > 0
@@ -215,17 +227,15 @@ namespace LiteEntitySystem.Internal
                 }
                 _latestEntityData[HeaderSize + _fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledSyncGroups;
             }
-
+            
+            //make diff
+            // -1 for cycle
+            byte* fields = resultData - 1;
+            int position = _fieldsFlagsSize;
+            
             fixed (byte* lastEntityData = _latestEntityData) //make diff
             {
                 byte* entityDataAfterHeader = lastEntityData + HeaderSize;
-                
-                // -1 for cycle
-                byte* fields = resultData + startPos + DiffHeaderSize - 1;
-                //put entity id at 2
-                *(ushort*)(resultData + position) = _entity.Id;
-                position += sizeof(ushort) + _fieldsFlagsSize;
-                int positionBeforeDeltaCompression = position;
 
                 //write fields
                 for (int i = 0; i < _fieldsCount; i++)
@@ -278,16 +288,19 @@ namespace LiteEntitySystem.Internal
                     position += field.IntSize;
                     //Logger.Log($"WF {_entity.GetType()} f: {_classData.Fields[i].Name}");
                 }
-
-                if (position == positionBeforeDeltaCompression)
-                {
-                    position = startPos;
-                    return false;
-                }
+            }
+            
+            //no changes
+            if (position == _fieldsFlagsSize)
+                return 0;
+            
+            if (position > ushort.MaxValue)
+            {
+                Logger.LogError($"Entity size overflow: {_entity}");
+                return 0;
             }
 
-            *totalSize = (ushort)(position - startPos);
-            return true;
+            return (ushort)position;
         }
     }
 }

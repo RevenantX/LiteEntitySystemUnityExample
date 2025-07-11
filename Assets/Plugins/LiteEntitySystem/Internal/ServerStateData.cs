@@ -111,11 +111,11 @@ namespace LiteEntitySystem.Internal
             for (int bytesRead = _dataOffset; bytesRead < _dataOffset + _dataSize;)
             {
                 int initialReaderPosition = bytesRead;
-                int totalSize = BitConverter.ToUInt16(Data, initialReaderPosition);
-                bytesRead += totalSize;
-                ushort entityId = BitConverter.ToUInt16(Data, initialReaderPosition + sizeof(ushort));
-                int classId = entityDict[entityId] != null 
-                    ? entityDict[entityId].ClassId
+                var diffHeader = new ReadOnlySpan<byte>(Data, initialReaderPosition, StateSerializer.DiffHeaderSize)
+                    .ReadStruct<EntityDiffHeader>();
+                bytesRead += diffHeader.Size + StateSerializer.DiffHeaderSize;
+                int classId = entityDict[diffHeader.EntityId] != null 
+                    ? entityDict[diffHeader.EntityId].ClassId
                     : -1;
                 string name = classId >= 0 
                     ? classDatas[classId].ClassEnumName 
@@ -123,12 +123,12 @@ namespace LiteEntitySystem.Internal
                 
                 if(!diagnosticDataDict.TryGetValue(classId, out LESDiagnosticDataEntry entry))
                 {
-                    entry = new LESDiagnosticDataEntry { Count = 1, Name = name, Size = totalSize };
+                    entry = new LESDiagnosticDataEntry { Count = 1, Name = name, Size = diffHeader.Size };
                 }
                 else
                 {
                     entry.Count++;
-                    entry.Size += totalSize;
+                    entry.Size += diffHeader.Size;
                 }
                 diagnosticDataDict[classId] = entry;
             }
@@ -139,21 +139,23 @@ namespace LiteEntitySystem.Internal
             for (int bytesRead = _dataOffset; bytesRead < _dataOffset + _dataSize;)
             {
                 int initialReaderPosition = bytesRead;
-                int totalSize = BitConverter.ToUInt16(Data, initialReaderPosition);
-                bytesRead += totalSize;
-                ushort entityId = BitConverter.ToUInt16(Data, initialReaderPosition + sizeof(ushort));
-                if (entityId == EntityManager.InvalidEntityId || entityId >= EntityManager.MaxSyncedEntityCount)
+                var diffHeader = new ReadOnlySpan<byte>(Data, initialReaderPosition, StateSerializer.DiffHeaderSize)
+                    .ReadStruct<EntityDiffHeader>();
+                
+                bytesRead += diffHeader.Size + StateSerializer.DiffHeaderSize;
+                
+                if (diffHeader.EntityId == EntityManager.InvalidEntityId || diffHeader.EntityId >= EntityManager.MaxSyncedEntityCount)
                 {
                     //Should remove at all
-                    Logger.LogError($"[CEM] Invalid entity id: {entityId}");
+                    Logger.LogError($"[CEM] Invalid entity id: {diffHeader.EntityId}");
                     return;
                 }
                 
-                var entity = entityDict[entityId];
+                var entity = entityDict[diffHeader.EntityId];
                 if (entity == null)
                 {
                     Utils.ResizeIfFull(ref _nullEntitiesData, _nullEntitiesCount);
-                   _nullEntitiesData[_nullEntitiesCount++] = new EntityDataCache(entityId, initialReaderPosition);
+                   _nullEntitiesData[_nullEntitiesCount++] = new EntityDataCache(diffHeader.EntityId, initialReaderPosition);
                    //Logger.Log($"Add to pending: {entityId}");
                     continue;
                 }

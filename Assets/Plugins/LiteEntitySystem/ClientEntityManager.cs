@@ -471,6 +471,8 @@ namespace LiteEntitySystem
             _entitiesToRollback.Clear();
             foreach (var entity in _modifiedEntitiesToRollback)
                 _entitiesToRollback.Enqueue(entity);
+            
+            UpdateMode = UpdateMode.PredictionRollback;
             //reset predicted entities
             foreach (var entity in _entitiesToRollback)
             {
@@ -503,9 +505,11 @@ namespace LiteEntitySystem
                 entity.OnRollback();
             }
             
+            //clear modified here to readd changes after RollbackUpdate
+            _modifiedEntitiesToRollback.Clear();
+            
             //reapply input
             int cmdNum = 0;
-            UpdateMode = UpdateMode.PredictionRollback;
             while(_storedInputHeaders.Count > 0 && Utils.SequenceDiff(_stateB.ProcessedTick, _storedInputHeaders.Front().Tick) >= 0)
             {
                 var storedInput = _storedInputHeaders.Front();
@@ -588,9 +592,6 @@ namespace LiteEntitySystem
                 i--;
             }
             //================== ReadEntityStates END ====================
-            
-            //clear modified here to readd changes after RollbackUpdate
-            _modifiedEntitiesToRollback.Clear();
     
             //reapply input
             UpdateMode = UpdateMode.PredictionRollback; 

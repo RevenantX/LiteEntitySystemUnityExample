@@ -937,10 +937,18 @@ namespace LiteEntitySystem
             }
             
             //Construct
-            if(late)
+            if (late)
+            {
                 entity.OnLateConstructed();
+            }
             else
+            {
+                //add owned entities to rollback queue
+                if(!entity.IsConstructed && entity.InternalOwnerId.Value == InternalPlayerId)
+                    _entitiesToRollback.Enqueue(entity);
+                
                 ConstructEntity(entity);
+            }
         }
 
         private unsafe InternalEntity ReadEntityDiff(ushort entityId, ushort totalSize, byte* rawData, ref int readerPosition)

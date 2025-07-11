@@ -144,10 +144,25 @@ namespace LiteEntitySystem.Internal
             
             fixed (byte* rawData = constructedRpc.Data)
             {
-                constructedRpc.Header.ByteCount = MakeDiffInternal(player, rawData, DiffType.Constructed);
+                constructedRpc.Header.ByteCount = MakeDiffInternal(player, rawData, DiffType.Constructed, null);
                 //Logger.Log($"Server send CRPCData {_entity.Id}, sz {resultPosition}: {Utils.BytesToHexString(new ReadOnlySpan<byte>(rawData, resultPosition))}");
             }
             _entity.ServerManager.EnqueuePendingRPC(constructedRpc);
+        }
+
+        public unsafe void MakeLateConstructedRPC(RemoteCallPacket constructedRpc)
+        {
+            var lateConstructedRpc =
+                _entity.ServerManager.GetRPCFromPool(
+                    _entity,
+                    RemoteCallPacket.LateConstructedRPCId,
+                    (ushort)GetMaximumDiffSize());
+            fixed (byte* rawData = lateConstructedRpc.Data, constructRpcData = constructedRpc.Data)
+            {
+                lateConstructedRpc.Header.ByteCount = MakeDiffInternal(constructedRpc.OnlyForPlayer, rawData, DiffType.LateConstruct, constructRpcData);
+                //Logger.Log($"Server send CRPCData {_entity.Id}, sz {resultPosition}: {Utils.BytesToHexString(new ReadOnlySpan<byte>(rawData, resultPosition))}");
+            }
+            _entity.ServerManager.EnqueuePendingRPC(lateConstructedRpc);
         }
 
         public void MakeDestroyedRPC(ushort tick)
@@ -177,7 +192,7 @@ namespace LiteEntitySystem.Internal
 
         public unsafe int MakeDiff(NetPlayer player, byte* resultData)
         {
-            ushort size = MakeDiffInternal(player, resultData + DiffHeaderSize, DiffType.Normal);
+            ushort size = MakeDiffInternal(player, resultData + DiffHeaderSize, DiffType.Normal, null);
             if (size <= 0) 
                 return 0;
             
@@ -189,7 +204,7 @@ namespace LiteEntitySystem.Internal
             return size + DiffHeaderSize;
         }
 
-        private unsafe ushort MakeDiffInternal(NetPlayer player, byte* resultData, DiffType diffType)
+        private unsafe ushort MakeDiffInternal(NetPlayer player, byte* resultData, DiffType diffType, byte* dataToCompare)
         {
             if (_entity == null)
             {
@@ -211,31 +226,32 @@ namespace LiteEntitySystem.Internal
                 ? _versionChangedTick
                 : player.CurrentServerTick;
             
-            //overwrite IsSyncEnabled for each player
-            SyncGroup enabledSyncGroups = SyncGroup.All;
-            if (_entity is EntityLogic el)
-            {
-                if (player.EntitySyncInfo.TryGetValue(el, out var syncGroupData))
-                {
-                    enabledSyncGroups = syncGroupData.EnabledGroups;
-                    _fieldChangeTicks[el.IsSyncEnabledFieldId] = syncGroupData.LastChangedTick;
-                }
-                else
-                {
-                    //if no data it "never" changed
-                    _fieldChangeTicks[el.IsSyncEnabledFieldId] = _versionChangedTick;
-                }
-                _latestEntityData[HeaderSize + _fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledSyncGroups;
-            }
-            
             //make diff
             // -1 for cycle
             byte* fields = resultData - 1;
             int position = _fieldsFlagsSize;
+            int dataToComparePosition = _fieldsFlagsSize;
             
             fixed (byte* lastEntityData = _latestEntityData) //make diff
             {
                 byte* entityDataAfterHeader = lastEntityData + HeaderSize;
+      
+                //overwrite IsSyncEnabled for each player
+                SyncGroup enabledSyncGroups = SyncGroup.All;
+                if (_entity is EntityLogic el)
+                {
+                    if (player.EntitySyncInfo.TryGetValue(el, out var syncGroupData))
+                    {
+                        enabledSyncGroups = syncGroupData.EnabledGroups;
+                        _fieldChangeTicks[el.IsSyncEnabledFieldId] = syncGroupData.LastChangedTick;
+                    }
+                    else
+                    {
+                        //if no data it "never" changed
+                        _fieldChangeTicks[el.IsSyncEnabledFieldId] = _versionChangedTick;
+                    }
+                    entityDataAfterHeader[_fields[el.IsSyncEnabledFieldId].FixedOffset] = (byte)enabledSyncGroups;
+                }
 
                 //write fields
                 for (int i = 0; i < _fieldsCount; i++)
@@ -246,13 +262,11 @@ namespace LiteEntitySystem.Internal
                         fields++;
                         *fields = 0;
                     }
-                    
                     ref var field = ref _fields[i];
                     
                     switch (diffType)
                     {
-                        case DiffType.Normal:
-                            //not actual
+                        case DiffType.Normal: //skip old
                             if (Utils.SequenceDiff(_fieldChangeTicks[i], compareToTick) <= 0)
                             {
                                 //Logger.Log($"SkipOld: {field.Name}");
@@ -261,15 +275,30 @@ namespace LiteEntitySystem.Internal
                             }
                             break;
                         
-                        case DiffType.Constructed:
-                            //skip default
+                        case DiffType.Constructed: //skip default(0)
                             if (field.TypeProcessor.IsDefault(_entity, field.Offset))
+                                continue;
+                            break;
+                        
+                        case DiffType.LateConstruct:
+                            //compare with previous ConstructedRPC so we sending only delta
+                            var dataToComparePtr = dataToCompare + dataToComparePosition;
+                            if (Utils.IsBitSet(dataToCompare, i))
                             {
+                                //if value was set - compare
+                                dataToComparePosition += field.IntSize;
+                                if (field.TypeProcessor.IsEqual(_entity, field.Offset, dataToComparePtr))
+                                    continue;
+                            }
+                            else if (field.TypeProcessor.IsDefault(_entity, field.Offset))
+                            {
+                                //if there is no value - compare to default
                                 continue;
                             }
+
                             break;
                     }
-                    
+
                     if (((field.Flags & SyncFlags.OnlyForOwner) != 0 && !isOwned) || 
                         ((field.Flags & SyncFlags.OnlyForOtherPlayers) != 0 && isOwned))
                     {

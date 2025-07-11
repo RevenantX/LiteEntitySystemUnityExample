@@ -288,6 +288,10 @@ namespace LiteEntitySystem.Internal
                                     _entityManager.ReadConstructRPC(header.EntityId, rawData, remoteCallInfo.DataOffset, header.ByteCount);
                                     break;
                                 
+                                case RemoteCallPacket.LateConstructedRPCId:
+                                    Logger.Log($"LateConstructRPC for {header.EntityId}");
+                                    break;
+                                
                                 case RemoteCallPacket.DestroyRPCId:
                                     //Logger.Log($"DestroyRPC for {header.EntityId}");
                                     entity.DestroyInternal();

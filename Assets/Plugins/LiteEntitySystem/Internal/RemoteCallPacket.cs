@@ -20,12 +20,13 @@ namespace LiteEntitySystem.Internal
 
         public int TotalSize => RpcDeltaCompressor.MaxDeltaSize + Header.ByteCount;
         
-        public const int ReservedRPCsCount = 4;
+        public const int ReservedRPCsCount = 5;
         
         public const ushort NewRPCId = 0;
         public const ushort NewOwnedRPCId = 1;
         public const ushort ConstructRPCId = 2;
-        public const ushort DestroyRPCId = 3;
+        public const ushort LateConstructedRPCId = 3;
+        public const ushort DestroyRPCId = 4;
 
         //can be static because doesnt use any buffers
         private static DeltaCompressor RpcDeltaCompressor = new(Utils.SizeOfStruct<RPCHeader>());

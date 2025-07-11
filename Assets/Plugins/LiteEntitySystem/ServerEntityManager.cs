@@ -585,14 +585,21 @@ namespace LiteEntitySystem
             
             ExecuteLateConstruct();
 
-            //refresh construct rpc with latest updates to entity at creation tick
-            /*
+            //make late construct RPCs using diff from ConstructRPC
             foreach (var rpcNode in _pendingRPCs)
             {
                 if (rpcNode.Header.Id == RemoteCallPacket.ConstructRPCId && rpcNode.Header.Tick == _tick)
-                    _stateSerializers[rpcNode.Header.EntityId].RefreshConstructedRPC(rpcNode);
+                {
+                    if (rpcNode.OnlyForPlayer == null)
+                    {
+                        Logger.LogError("Null player in ConstructedRPC. Should be impossible!");
+                        return;
+                    }
+                    _syncForPlayer = rpcNode.OnlyForPlayer;
+                    _stateSerializers[rpcNode.Header.EntityId].MakeLateConstructedRPC(rpcNode);
+                    _syncForPlayer = null;
+                }
             }
-            */
             
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
                 ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, _tick);

@@ -48,6 +48,7 @@ namespace LiteEntitySystem
         private readonly byte[] _inputDecodeBuffer = new byte[NetConstants.MaxUnreliableDataSize];
         private readonly NetDataReader _requestsReader = new();
         private readonly Queue<RemoteCallPacket> _pendingRPCs = new();
+        private readonly Queue<RemoteCallPacket> _newConstructRPCs = new();
 
         private NetPlayer _syncForPlayer;
         private int _maxDataSize;
@@ -101,6 +102,7 @@ namespace LiteEntitySystem
         public override void Reset()
         {
             base.Reset();
+            _newConstructRPCs.Clear();
             _nextOrderNum = 0;
             _changedEntities.Clear();
             _pendingRPCs.Clear();
@@ -495,7 +497,8 @@ namespace LiteEntitySystem
                 if(player.State == NetPlayerState.RequestBaseline || player.State == NetPlayerState.Removed)
                     continue;
                 _syncForPlayer = player;
-                stateSerializer.MakeConstructedRPC(_syncForPlayer);
+                var constructRPC = stateSerializer.MakeConstructedRPC(_syncForPlayer);
+                _newConstructRPCs.Enqueue(constructRPC);
             }
             _syncForPlayer = null;
             
@@ -582,24 +585,23 @@ namespace LiteEntitySystem
                     if(!aliveEntity.IsDestroyed)
                         aliveEntity.Update();
             }
-            
-            ExecuteLateConstruct();
 
-            //make late construct RPCs using diff from ConstructRPC
-            foreach (var rpcNode in _pendingRPCs)
+            
+            foreach (var remoteCallPacket in _newConstructRPCs)
             {
-                if (rpcNode.Header.Id == RemoteCallPacket.ConstructRPCId && rpcNode.Header.Tick == _tick)
+                var entity = EntitiesDict[remoteCallPacket.Header.EntityId];
+                entity.OnLateConstructed();
+                if (remoteCallPacket.OnlyForPlayer == null)
                 {
-                    if (rpcNode.OnlyForPlayer == null)
-                    {
-                        Logger.LogError("Null player in ConstructedRPC. Should be impossible!");
-                        return;
-                    }
-                    _syncForPlayer = rpcNode.OnlyForPlayer;
-                    _stateSerializers[rpcNode.Header.EntityId].MakeLateConstructedRPC(rpcNode);
-                    _syncForPlayer = null;
+                    Logger.LogError("Null player in ConstructedRPC. Should be impossible!");
+                    return;
                 }
+                //make late construct RPCs using diff from ConstructRPC
+                _syncForPlayer = remoteCallPacket.OnlyForPlayer;
+                _stateSerializers[remoteCallPacket.Header.EntityId].MakeLateConstructedRPC(remoteCallPacket);
+                _syncForPlayer = null;
             }
+            _newConstructRPCs.Clear();
             
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
                 ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, _tick);

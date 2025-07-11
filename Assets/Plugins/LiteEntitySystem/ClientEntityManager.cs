@@ -133,6 +133,9 @@ namespace LiteEntitySystem
         private InternalEntity[] _entitiesToRemove = new InternalEntity[64];
         private readonly Queue<InternalEntity> _entitiesToRollback = new();
         private int _entitiesToRemoveCount;
+        
+        //call manually late construct only for local entities
+        private readonly Queue<InternalEntity> _entitiesToLateConstruct = new();
 
         private ServerSendRate _serverSendRate;
         private ServerStateData _stateA;
@@ -229,6 +232,8 @@ namespace LiteEntitySystem
         {
             base.Reset();
             _modifiedEntitiesToRollback.Clear();
+            _entitiesToLateConstruct.Clear();
+            _entitiesToRollback.Clear();
             _localIdQueue.Reset();
             _readyStates.Clear();
             _syncCallsCount = 0;
@@ -265,6 +270,7 @@ namespace LiteEntitySystem
             initMethod(entity);
             ConstructEntity(entity);
             _spawnPredictedEntities.Enqueue((_tick, entity));
+            _entitiesToLateConstruct.Enqueue(entity);
             
             for(int i = 0; i < classData.InterpolatedCount; i++)
             {
@@ -899,20 +905,20 @@ namespace LiteEntitySystem
         
         private void ExecuteSyncCalls(ServerStateData stateData)
         {
-            ExecuteLateConstruct();
+            foreach (var internalEntity in _entitiesToLateConstruct)
+                internalEntity.OnLateConstructed();
+            _entitiesToLateConstruct.Clear();
             for (int i = 0; i < _syncCallsCount; i++)
                 _syncCalls[i].Execute(stateData);
             _syncCallsCount = 0;
         }
         
-        internal unsafe void ReadConstructRPC(ushort entityId, byte* rawData, int readerPosition, int size)
+        internal unsafe void ReadConstructRPC(ushort entityId, byte* rawData, int readerPosition, int size, bool late)
         {
             InternalEntity entity;
             if (size > 0)
             {
                 //Logger.Log($"Client receive CRPCData: {entityId}, sz {size}: {Utils.BytesToHexString(new ReadOnlySpan<byte>(rawData + readerPosition, size))}");
-                
-                //Logger.Log($"ConstructRPC: {entityId}");
                 entity = ReadEntityDiff(entityId, (ushort)size, rawData, ref readerPosition);
                 if (entity == null)
                 {
@@ -928,8 +934,11 @@ namespace LiteEntitySystem
                 _changedEntities.Add(entity);
             }
             
-            //Construct and fast forward predicted entities
-            ConstructEntity(entity);
+            //Construct
+            if(late)
+                entity.OnLateConstructed();
+            else
+                ConstructEntity(entity);
         }
 
         private unsafe InternalEntity ReadEntityDiff(ushort entityId, ushort totalSize, byte* rawData, ref int readerPosition)

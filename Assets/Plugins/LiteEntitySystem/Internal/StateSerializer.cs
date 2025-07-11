@@ -121,7 +121,7 @@ namespace LiteEntitySystem.Internal
                 ExecuteFlags.SendToAll);
         }
 
-        public unsafe void MakeConstructedRPC(NetPlayer player)
+        public unsafe RemoteCallPacket MakeConstructedRPC(NetPlayer player)
         {
             //make on sync
             try
@@ -148,6 +148,7 @@ namespace LiteEntitySystem.Internal
                 //Logger.Log($"Server send CRPCData {_entity.Id}, sz {resultPosition}: {Utils.BytesToHexString(new ReadOnlySpan<byte>(rawData, resultPosition))}");
             }
             _entity.ServerManager.EnqueuePendingRPC(constructedRpc);
+            return constructedRpc;
         }
 
         public unsafe void MakeLateConstructedRPC(RemoteCallPacket constructedRpc)

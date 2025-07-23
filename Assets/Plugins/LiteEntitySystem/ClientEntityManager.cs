@@ -150,6 +150,11 @@ namespace LiteEntitySystem
         private ushort _lastReceivedInputTick;
         private ushort _lastReadyTick;
 
+        //used for debug info
+        private ushort _rollbackStep;
+        private ushort _rollbackTotalSteps;
+        private ushort _tickBeforeRollback;
+        
         //time manipulation
         private readonly float[] _jitterSamples = new float[50];
         private int _jitterSampleIdx;
@@ -188,6 +193,13 @@ namespace LiteEntitySystem
                 }
             }
         }
+
+        public override string GetCurrentFrameDebugInfo(DebugFrameModes modes) => 
+            UpdateMode == UpdateMode.PredictionRollback && modes.HasFlagFast(DebugFrameModes.Rollback)
+                ? $"[ClientRollback({_rollbackStep}/{_rollbackTotalSteps})] Tick {_tickBeforeRollback}. RollbackTick: {_tick}. ServerTick: {ServerTick}" 
+                : modes.HasFlagFast(DebugFrameModes.Client) && UpdateMode == UpdateMode.Normal
+                    ? $"[Client] Tick {_tick}. ServerTick: {ServerTick}"
+                    : string.Empty;
 
         /// <summary>
         /// Return client controller if exist
@@ -455,6 +467,11 @@ namespace LiteEntitySystem
         private unsafe void GoToNextState()
         {
             _remoteInterpolationTimer -= _remoteInterpolationTotalTime;
+
+            _tickBeforeRollback = _tick;
+            _rollbackStep = 0;
+            _rollbackTotalSteps = (ushort)_storedInputHeaders.Count;
+            
             ushort targetTick = _tick;
             var humanControllerFilter = GetEntities<HumanControllerLogic>();
             
@@ -512,6 +529,7 @@ namespace LiteEntitySystem
                 foreach (var controller in humanControllerFilter)
                     controller.ReadStoredInput(cmdNum);
                 cmdNum++;
+                _rollbackStep++;
                 
                 //simple update
                 foreach (var entity in _entitiesToRollback)
@@ -587,6 +605,8 @@ namespace LiteEntitySystem
                 _tick = storedInput.Tick;
                 foreach (var controller in humanControllerFilter)
                     controller.ReadStoredInput(cmdNum);
+                _rollbackStep++;
+                
                 //simple update
                 foreach (var entity in _entitiesToRollback)
                 {

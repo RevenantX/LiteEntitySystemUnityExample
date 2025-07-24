@@ -13,7 +13,7 @@ namespace Code.Shared
     }
     
     [EntityFlags(EntityFlags.UpdateOnClient)]
-    public class SimpleProjectile : EntityLogic
+    public class SimpleProjectile : PredictableEntityLogic
     {
         private static readonly RaycastHit2D[] RaycastHits = new RaycastHit2D[10];
         

@@ -126,7 +126,7 @@ namespace LiteEntitySystem
         private readonly Queue<ServerStateData> _statesPool = new(MaxSavedStateDiff);
         private readonly Dictionary<ushort, ServerStateData> _receivedStates = new();
         private readonly SequenceBinaryHeap<ServerStateData> _readyStates = new(MaxSavedStateDiff);
-        private readonly Queue<(ushort tick, EntityLogic entity)> _spawnPredictedEntities = new ();
+        private readonly Queue<PredictableEntityLogic> _tempLocalEntities = new ();
         private readonly byte[] _sendBuffer = new byte[NetConstants.MaxPacketSize];
         private readonly HashSet<InternalEntity> _changedEntities = new();
         private readonly CircularBuffer<InputInfo> _storedInputHeaders = new(InputBufferSize);
@@ -252,7 +252,7 @@ namespace LiteEntitySystem
         /// </summary>
         /// <typeparam name="T">Entity type</typeparam>
         /// <returns>Created entity or null if entities limit is reached (<see cref="EntityManager.MaxEntityCount"/>)</returns>
-        internal T AddLocalEntity<T>(EntityLogic parent, Action<T> initMethod) where T : EntityLogic
+        internal unsafe T AddLocalEntity<T>(EntityLogic parent, Action<T> initMethod) where T : PredictableEntityLogic
         {
             if (_localIdQueue.AvailableIds == 0)
             {
@@ -276,26 +276,36 @@ namespace LiteEntitySystem
             entity.SetParentInternal(parent);
             initMethod(entity);
             ConstructEntity(entity);
-            _spawnPredictedEntities.Enqueue((_tick, entity));
-            
-            for(int i = 0; i < classData.InterpolatedCount; i++)
+            _tempLocalEntities.Enqueue(entity);
+
+            fixed (byte* predictedData = classData.GetLastServerData(entity))
             {
-                ref var field = ref classData.Fields[i];
-                field.TypeProcessor.SetInterpValueFromCurrentValue(entity, field.Offset);
+                for (int i = 0; i < classData.FieldsCount; i++)
+                {
+                    ref var field = ref classData.Fields[i];
+                    if(field.Flags.HasFlagFast(SyncFlags.Interpolated))
+                        field.TypeProcessor.SetInterpValueFromCurrentValue(entity, field.Offset);
+                    if(field.IsPredicted)
+                        field.TypeProcessor.WriteTo(entity, field.Offset, predictedData + field.PredictedOffset);
+                }
             }
             
+            //init syncable rollback
+            for (int i = 0; i < classData.SyncableFieldsCustomRollback.Length; i++)
+            {
+                var syncableField = RefMagic.GetFieldValue<SyncableFieldCustomRollback>(entity, classData.SyncableFieldsCustomRollback[i].Offset);
+                syncableField.BeforeReadRPC();
+                syncableField.AfterReadRPC();
+            }
+
             return entity;
         }
 
-        internal EntityLogic FindEntityByPredictedId(ushort tick, ushort parentId, ushort predictedId)
+        internal PredictableEntityLogic FindEntityByPredictedId(ushort tick, ushort parentId, ushort predictedId)
         {
-            foreach (var predictedEntity in _spawnPredictedEntities)
-            {
-                if (predictedEntity.tick == tick && 
-                    predictedEntity.entity.ParentId.Id == parentId &&
-                    predictedEntity.entity.PredictedId == predictedId)
-                    return predictedEntity.entity;
-            }
+            foreach (var predictedEntity in _tempLocalEntities)
+                if (predictedEntity.IsEntityMatch(predictedId, parentId, tick))
+                    return predictedEntity;
             return null;
         }
         
@@ -475,12 +485,13 @@ namespace LiteEntitySystem
             ushort targetTick = _tick;
             var humanControllerFilter = GetEntities<HumanControllerLogic>();
             
-            //Step a little to match "predicted" state at server processed tick
-            //for correct BindOnSync execution
             //================== Rollback part ===========================
             _entitiesToRollback.Clear();
             foreach (var entity in _modifiedEntitiesToRollback)
-                _entitiesToRollback.Enqueue(entity);
+            {
+                if(!entity.IsRemoved)
+                    _entitiesToRollback.Enqueue(entity);
+            }
             
             UpdateMode = UpdateMode.PredictionRollback;
             //reset predicted entities
@@ -518,7 +529,8 @@ namespace LiteEntitySystem
             //clear modified here to readd changes after RollbackUpdate
             _modifiedEntitiesToRollback.Clear();
             
-            //reapply input
+            //Step a little to match "predicted" state at server processed tick
+            //for correct BindOnSync execution
             int cmdNum = 0;
             while(_storedInputHeaders.Count > 0 && Utils.SequenceDiff(_stateB.ProcessedTick, _storedInputHeaders.Front().Tick) >= 0)
             {
@@ -536,6 +548,11 @@ namespace LiteEntitySystem
                 {
                     if (!entity.IsLocalControlled || !AliveEntities.Contains(entity))
                         continue;
+                    
+                    //skip local entities that spawned later
+                    if (entity.IsLocal && entity is PredictableEntityLogic el && Utils.SequenceDiff(el.CreatedAtTick, _tick) >= 0)
+                        continue;
+                    
                     entity.Update();
                 }
             }
@@ -545,23 +562,6 @@ namespace LiteEntitySystem
             foreach (var controller in humanControllerFilter)
                 controller.RemoveClientProcessedInputs(_stateB.ProcessedTick);
             
-            //delete predicted
-            while (_spawnPredictedEntities.TryPeek(out var info))
-            {
-                if (Utils.SequenceDiff(_stateB.ProcessedTick, info.tick) >= 0)
-                {
-                    //Logger.Log($"Delete predicted. Tick: {info.tick}, Entity: {info.entity}");
-                    _spawnPredictedEntities.Dequeue();
-                    info.entity.DestroyInternal();
-                    RemoveEntity(info.entity);
-                    _localIdQueue.ReuseId(info.entity.Id);
-                }
-                else
-                {
-                    break;
-                }
-            }
-            
             ushort minimalTick = _stateA.Tick;
             _statesPool.Enqueue(_stateA);
             _stateA = _stateB;
@@ -569,12 +569,29 @@ namespace LiteEntitySystem
             ServerTick = _stateA.Tick;
             
             //Logger.Log($"GotoState: IST: {ServerTick}, TST:{_stateA.Tick}");
-            
-            //================== ReadEntityStates BEGIN ==================
             _changedEntities.Clear();
             _stateA.ExecuteRpcs(minimalTick, RPCExecuteMode.OnNextState);
             ReadDiff();
             ExecuteSyncCalls(_stateA);
+            
+            //delete predicted
+            while (_tempLocalEntities.TryPeek(out var entity))
+            {
+                if (Utils.SequenceDiff(_stateA.ProcessedTick, entity.CreatedAtTick) >= 0)
+                {
+                    //Logger.Log($"Delete predicted. Tick: {info.tick}, Entity: {info.entity}");
+                    _tempLocalEntities.Dequeue();
+                    entity.DestroyInternal();
+                    RemoveEntity(entity);
+                    _localIdQueue.ReuseId(entity.Id);
+                }
+                else
+                {
+                    break;
+                }
+            }
+            
+            //write lag comp history for remote rollbackable lagcomp fields
             foreach (var lagCompensatedEntity in LagCompensatedEntities)
                 ClassDataDict[lagCompensatedEntity.ClassId].WriteHistory(lagCompensatedEntity, ServerTick);
 
@@ -593,8 +610,7 @@ namespace LiteEntitySystem
                 _entitiesToRemove[_entitiesToRemoveCount] = null;
                 i--;
             }
-            //================== ReadEntityStates END ====================
-    
+
             //reapply input
             UpdateMode = UpdateMode.PredictionRollback; 
             for(cmdNum = 0; cmdNum < _storedInputHeaders.Count; cmdNum++)
@@ -611,6 +627,10 @@ namespace LiteEntitySystem
                 foreach (var entity in _entitiesToRollback)
                 {
                     if (!entity.IsLocalControlled || !AliveEntities.Contains(entity))
+                        continue;
+                    
+                    //skip local entities that spawned later
+                    if (entity.IsLocal && entity is PredictableEntityLogic el && Utils.SequenceDiff(el.CreatedAtTick, _tick) >= 0)
                         continue;
                     
                     //update interpolation data
@@ -635,7 +655,7 @@ namespace LiteEntitySystem
 
         internal void MarkEntityChanged(InternalEntity entity)
         {
-            if (entity.IsLocal || entity.IsDestroyed)
+            if (entity.IsRemoved)
                 return;
             _modifiedEntitiesToRollback.Add(entity);
         }
@@ -653,9 +673,6 @@ namespace LiteEntitySystem
                 T value = oldValue;
                 fieldInfo.OnSync(entity, new ReadOnlySpan<byte>(&value, sizeof(T)));
             }
-
-            if (entity.IsLocal)
-                return;
             
             var rollbackFields = classData.GetRollbackFields(entity.IsLocalControlled);
             if (rollbackFields != null && rollbackFields.Length > 0 && fieldInfo.IsPredicted)
@@ -666,13 +683,12 @@ namespace LiteEntitySystem
         {
             if (!e.IsLocal)
             {
+                //because remote and server alive entities managed by EntityManager
                 if(e.IsLocalControlled && e is EntityLogic eLogic)
                     RemoveOwned(eLogic);
                 Utils.AddToArrayDynamic(ref _entitiesToRemove, ref _entitiesToRemoveCount, e);
-                
-                _modifiedEntitiesToRollback.Remove(e);
             }
-            
+            _modifiedEntitiesToRollback.Remove(e);
             base.OnEntityDestroyed(e);
         }
         
@@ -919,22 +935,46 @@ namespace LiteEntitySystem
             }
     
             var entity = EntitiesDict[entityId];
+            
             bool writeInterpolationData = !entity.IsConstructed || entity.IsRemoteControlled;
             ref var classData = ref entity.ClassData;
             Utils.ResizeOrCreate(ref _syncCalls, _syncCallsCount + classData.FieldsCount);
+            
+            //set values to same as predicted entity for correct OnSync calls
+            if (!entity.IsConstructed && entity is PredictableEntityLogic pel)
+            {
+                foreach (var localEntity in _tempLocalEntities)
+                {
+                    if (!pel.IsSameAsLocal(localEntity))
+                        continue;
+
+                    for (int i = 0; i < classData.FieldsCount; i++)
+                    {
+                        ref var field = ref classData.Fields[i];
+                        //skip some fields because they need to trigger onChange
+                        if (i == pel.InternalOwnerId.FieldId || i == pel.IsSyncEnabledFieldId)
+                            continue;
+                        
+                        field.TypeProcessor.CopyFrom(pel, localEntity, field.Offset);
+                    }
+                    
+                    break;
+                }
+            }
 
             fixed (byte* predictedData = classData.GetLastServerData(entity))
             {
                 for (int i = 0; i < classData.FieldsCount; i++)
                 {
                     ref var field = ref classData.Fields[i];
+                    
                     if (writeInterpolationData && field.Flags.HasFlagFast(SyncFlags.Interpolated))
                         field.TypeProcessor.SetInterpValue(entity, field.Offset, rawData + readerPosition);
-                    
+
                     if (field.ReadField(entity, rawData + readerPosition, predictedData))
                         _syncCalls[_syncCallsCount++] = new SyncCallInfo(field.OnSync, entity, readerPosition, field.IntSize);
 
-                    //Logger.Log($"E {entity.Id} Field updated: {field.Name}");
+                    //Logger.Log($"E {entity.Id} Field updated: {field.Name} = {field.TypeProcessor.ToString(entity, field.Offset)}");
                     readerPosition += field.IntSize;
                 }
             }

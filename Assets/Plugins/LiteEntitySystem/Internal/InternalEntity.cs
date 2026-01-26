@@ -50,6 +50,11 @@ namespace LiteEntitySystem.Internal
         public bool IsClient => EntityManager.IsClient;
 
         /// <summary>
+        /// Entity ClassId name
+        /// </summary>
+        public string ClassIdName => ClassData.ClassEnumName;
+
+        /// <summary>
         /// Entity version (for id reuse)
         /// </summary>
         public readonly byte Version;
@@ -123,7 +128,13 @@ namespace LiteEntitySystem.Internal
         /// <summary>
         /// Entity state. New, Constructed, Destroyed, Removed
         /// </summary>
-        public EntityState State => _entityState;
+        public EntityState CreationState => _entityState;
+
+        /// <summary>
+        /// Used to detect situation when base.RegisterRPC isn't called
+        /// </summary>
+        [ThreadStatic]
+        private static bool IsBaseRegisterRPCCalled;
 
         /// <summary>
         /// Destroy entity
@@ -147,6 +158,12 @@ namespace LiteEntitySystem.Internal
         {
             if (IsDestroyed)
                 return;
+            if (_entityState == EntityState.Constructed)
+            {
+                //id destroyed before late construct - execute late construct first
+                LateConstructInternal();
+            }
+            
             _entityState = EntityState.Destroyed;
             EntityManager.OnEntityDestroyed(this);
             OnDestroy();
@@ -155,7 +172,7 @@ namespace LiteEntitySystem.Internal
         internal void ConstructInternal()
         {
             if (_entityState != EntityState.New)
-                Logger.LogError($"Error! Calling construct on not new entity: {this}");
+                Logger.LogError($"Error! Calling construct on not new entity: {this}. State: {_entityState}");
             
             _entityState = EntityState.Constructed;
         }
@@ -163,7 +180,7 @@ namespace LiteEntitySystem.Internal
         internal void LateConstructInternal()
         {
             if (_entityState != EntityState.Constructed)
-                Logger.LogError($"Error! Calling late construct on not constructed entity: {this}");
+                Logger.LogError($"Error! Calling late construct on not constructed entity: {this}. State: {_entityState}");
             
             _entityState = EntityState.LateConstructed;
             OnLateConstructed();
@@ -172,7 +189,7 @@ namespace LiteEntitySystem.Internal
         internal void Remove()
         {
             if (_entityState != EntityState.Destroyed)
-                Logger.LogError($"Error! Calling remove on not destroyed entity: {this}");
+                Logger.LogError($"Error! Calling remove on not destroyed entity: {this}. State: {_entityState}");
             
             _entityState = EntityState.Removed;
         }
@@ -244,15 +261,12 @@ namespace LiteEntitySystem.Internal
             for (int i = 0; i < classData.FieldsCount; i++)
             {
                 ref var field = ref classData.Fields[i];
-                if (field.FieldType == FieldType.SyncVar)
-                {
-                    field.TypeProcessor.InitSyncVar(this, field.Offset, this, (ushort)i);
-                }
-                else
-                {
-                    var syncableField = RefMagic.GetFieldValue<SyncableField>(this, field.Offset);
-                    field.TypeProcessor.InitSyncVar(syncableField, field.SyncableSyncVarOffset, this, (ushort)i);
-                }
+                var target = field.GetTargetObjectAndOffset(this, out int offset);
+                
+                //init before SyncVar init because SyncVar can call OnChange
+                if (field.FieldType == FieldType.SyncableSyncVar)
+                    RefMagic.GetFieldValue<SyncableField>(this, field.Offset).Init(this, field.Flags);
+                field.TypeProcessor.InitSyncVar(target, offset, this, (ushort)i);
             }
           
             List<RpcFieldInfo> rpcCache = null;
@@ -263,7 +277,12 @@ namespace LiteEntitySystem.Internal
                 RemoteCallPacket.InitReservedRPCs(rpcCache);
 
                 var rpcRegistrator = new RPCRegistrator(rpcCache, classData.Fields);
+                IsBaseRegisterRPCCalled = false;
                 RegisterRPC(ref rpcRegistrator);
+                if (!IsBaseRegisterRPCCalled)
+                {
+                    Logger.LogError($"Error! You need always call to base.RegisterRPC in your overrides. Failed class: {ClassIdName}");
+                }
                 //Logger.Log($"RegisterRPCs for class: {classData.ClassId}");
             }
             //setup id for later sync calls
@@ -295,7 +314,7 @@ namespace LiteEntitySystem.Internal
         /// <param name="r"></param>
         protected virtual void RegisterRPC(ref RPCRegistrator r)
         {
-
+            IsBaseRegisterRPCCalled = true;
         }
         
         protected void ExecuteRPC(in RemoteCall rpc)

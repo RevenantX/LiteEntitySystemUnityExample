@@ -360,8 +360,12 @@ namespace LiteEntitySystem
         public void GetEntitySyncVarInfo(InternalEntity entity, IEntitySyncVarInfoPrinter resultPrinter)
         {
             ref var classData = ref ClassDataDict[entity.ClassId];
-            foreach (EntityFieldInfo fi in classData.Fields)
-                resultPrinter.PrintFieldInfo(fi.Name, fi.TypeProcessor.ToString(entity, fi.Offset));
+            for(int i = 0; i < classData.FieldsCount; i++)
+            {
+                ref var fi = ref classData.Fields[i]; 
+                var target = fi.GetTargetObjectAndOffset(entity, out int offset);
+                resultPrinter.PrintFieldInfo(fi.Name, fi.TypeProcessor.ToString(target, offset));
+            }
         }
 
         /// <summary>
@@ -369,18 +373,18 @@ namespace LiteEntitySystem
         /// </summary>
         public virtual void Reset()
         {
-            EntitiesCount = 0;
-            
-            _tick = 0;
-            VisualDeltaTime = 0.0;
-            _accumulator = 0;
-            _lastTime = 0;
-            InternalPlayerId = 0;
-            _stopwatch.Stop();
-            _stopwatch.Reset();
+            var entityFilter = GetEntities<InternalEntity>();
+            var entitiesToDestroy = new InternalEntity[entityFilter.Count];
 
+            int idx = 0;
             foreach (var entity in GetEntities<InternalEntity>())
-                entity.DestroyInternal();
+                entitiesToDestroy[idx++] = entity;
+
+            for (int i = 0; i < entitiesToDestroy.Length; i++)
+                entitiesToDestroy[i].DestroyInternal();
+            
+            for (int i = 0; i < entitiesToDestroy.Length; i++)
+                RemoveEntity(entitiesToDestroy[i]);
 
             foreach (var localSingleton in _localSingletons)
                 localSingleton.Value?.Destroy();
@@ -389,8 +393,18 @@ namespace LiteEntitySystem
             AliveEntities.Clear();
             _localSingletons.Clear();
             _localSingletonBaseTypes.Clear();
-            Array.Clear(EntitiesDict, 0, EntitiesDict.Length);
             Array.Clear(_entityFilters, 0, _entityFilters.Length);
+            
+            if(EntitiesCount != 0)
+                Logger.LogWarning($"Entities not fully removed: {EntitiesCount}");
+            EntitiesCount = 0;
+            
+            _tick = 0;
+            VisualDeltaTime = 0.0;
+            _accumulator = 0;
+            _lastTime = 0;
+            _stopwatch.Stop();
+            _stopwatch.Reset();
         }
 
         /// <summary>
@@ -438,7 +452,7 @@ namespace LiteEntitySystem
                     if (entity is T castedEnt)
                     {
                         typedFilter.Add(castedEnt);
-                        if(entity.State == EntityState.LateConstructed)
+                        if(entity.CreationState == EntityState.LateConstructed)
                             entityFilter.TriggerConstructedEvent(entity);
                     }
                 }
@@ -633,6 +647,10 @@ namespace LiteEntitySystem
         
         protected void RemoveEntity(InternalEntity e)
         {
+            //this can happen on entity replace.
+            if (e.IsRemoved)
+                return;
+            
             if(!e.IsDestroyed)
                 Logger.LogError($"Remove not destroyed entity!: {e}");
 
@@ -675,6 +693,8 @@ namespace LiteEntitySystem
         {
             foreach (var e in _entitiesToLateConstruct)
             {
+                if (e.IsDestroyed)
+                    continue;
                 e.LateConstructInternal();
                 
                 ref var classData = ref ClassDataDict[e.ClassId];
@@ -698,6 +718,13 @@ namespace LiteEntitySystem
         
         internal abstract void EntityFieldChanged<T>(InternalEntity entity, ushort fieldId, ref T newValue, ref T oldValue, bool skipOnSync)
             where T : unmanaged;
+
+        protected void ExecuteLocalSingletonsLateUpdate()
+        {
+            foreach (var localSingleton in _localSingletons)
+                if(localSingleton.Value is ILocalSingletonWithUpdate updSingleton)
+                    updSingleton.LateUpdate(DeltaTimeF);
+        }
 
         /// <summary>
         /// Main update method, updates internal fixed timer and do all other stuff

@@ -92,6 +92,7 @@ namespace LiteEntitySystem.Internal
         public int[] GetRollbackFields(bool isOwned) =>
             isOwned ? _ownedRollbackFields : _remoteRollbackFields;
         
+        //here Offset used because SyncableFields doesn't support LagCompensated fields
         public unsafe void WriteHistory(EntityLogic e, ushort tick)
         {
             int historyOffset = ((tick % _maxHistoryCount)+1)*LagCompensatedSize;
@@ -164,19 +165,6 @@ namespace LiteEntitySystem.Internal
                 entity.IOBuffer = null;
             }
         }
-        
-        public void CallOnSync(InternalBaseClass entity, ref EntityFieldInfo field, ReadOnlySpan<byte> buffer)
-        {
-            if (field.FieldType == FieldType.SyncableSyncVar)
-            {
-                var syncableField = RefMagic.GetFieldValue<SyncableField>(entity, field.Offset);
-                field.OnSync(syncableField, buffer);
-            }
-            else
-            {
-                field.OnSync(entity, buffer);
-            }
-        }
 
         public EntityClassData(EntityManager entityManager, ushort filterId, Type entType, RegisteredTypeInfo typeInfo)
         {
@@ -244,7 +232,7 @@ namespace LiteEntitySystem.Internal
                         {
                             InterpolatedCount++;
                         }
-                        var fieldInfo = new EntityFieldInfo($"{baseType.Name}-{field.Name}", valueTypeProcessor, offset, syncVarFlags);
+                        var fieldInfo = new EntityFieldInfo($"{baseType.Name}-{field.Name}", valueTypeProcessor, offset, syncVarFlags?.Flags ?? SyncFlags.None);
                         if (syncFlags.HasFlagFast(SyncFlags.LagCompensated))
                         {
                             lagCompensatedFields.Add(fieldInfo);
@@ -294,8 +282,21 @@ namespace LiteEntitySystem.Internal
                                     Logger.LogError($"Unregistered field type: {syncableFieldType}");
                                     continue;
                                 }
+                                
+                                var mergedSyncFlags = (syncableField.GetCustomAttribute<SyncVarFlags>()?.Flags ?? SyncFlags.None) | (syncVarFlags?.Flags ?? SyncFlags.None);
+                                if (mergedSyncFlags.HasFlagFast(SyncFlags.OnlyForOwner) &&
+                                    mergedSyncFlags.HasFlagFast(SyncFlags.OnlyForOtherPlayers))
+                                {
+                                    Logger.LogWarning($"{SyncFlags.OnlyForOwner} and {SyncFlags.OnlyForOtherPlayers} flags can't be used together! Field: {syncableType} - {syncableField.Name}");
+                                }
+                                if (mergedSyncFlags.HasFlagFast(SyncFlags.AlwaysRollback) &&
+                                    mergedSyncFlags.HasFlagFast(SyncFlags.NeverRollBack))
+                                {
+                                    Logger.LogWarning($"{SyncFlags.AlwaysRollback} and {SyncFlags.NeverRollBack} flags can't be used together! Field: {syncableType} - {syncableField.Name}");
+                                }
+                                
                                 int syncvarOffset = Utils.GetFieldOffset(syncableField);
-                                var fieldInfo = new EntityFieldInfo($"{baseType.Name}-{field.Name}:{syncableField.Name}", valueTypeProcessor, offset, syncvarOffset, syncVarFlags);
+                                var fieldInfo = new EntityFieldInfo($"{baseType.Name}-{field.Name}:{syncableField.Name}", valueTypeProcessor, offset, syncvarOffset, mergedSyncFlags);
                                 fields.Add(fieldInfo);
                                 FixedFieldsSize += fieldInfo.IntSize;
                                 if (fieldInfo.IsPredicted)

@@ -61,6 +61,11 @@ namespace LiteEntitySystem
         /// Network players count
         /// </summary>
         public int PlayersCount => _netPlayers.Count;
+
+        /// <summary>
+        /// Timeout after which player will receive baseline state if player cannot receive big partial state
+        /// </summary>
+        public float PlayerResyncTimeout = 4.0f;
         
         /// <summary>
         /// Rate at which server will make and send packets
@@ -288,7 +293,7 @@ namespace LiteEntitySystem
         /// </summary>
         /// <param name="owner">Player that owns this controller</param>
         /// <param name="entityToControl">pawn that will be controlled</param>
-        /// <param name="initMethod">Method that will be called after entity construction</param>
+        /// <param name="initMethod">Method that will be called before entity OnConstructed</param>
         /// <typeparam name="T">Entity type</typeparam>
         /// <returns>Created entity or null in case of limit</returns>
         public T AddController<T>(NetPlayer owner, PawnLogic entityToControl, Action<T> initMethod = null) where T : HumanControllerLogic =>
@@ -302,7 +307,7 @@ namespace LiteEntitySystem
         /// <summary>
         /// Add new AI controller entity
         /// </summary>
-        /// <param name="initMethod">Method that will be called after entity construction</param>
+        /// <param name="initMethod">Method that will be called before entity OnConstructed</param>
         /// <typeparam name="T">Entity type</typeparam>
         /// <returns>Created entity or null in case of limit</returns>
         public T AddAIController<T>(Action<T> initMethod = null) where T : AiControllerLogic => 
@@ -311,7 +316,7 @@ namespace LiteEntitySystem
         /// <summary>
         /// Add new entity
         /// </summary>
-        /// <param name="initMethod">Method that will be called after entity construction</param>
+        /// <param name="initMethod">Method that will be called before entity OnConstructed</param>
         /// <typeparam name="T">Entity type</typeparam>
         /// <returns>Created entity or null in case of limit</returns>
         public T AddSingleton<T>(Action<T> initMethod = null) where T : SingletonEntityLogic => 
@@ -320,7 +325,7 @@ namespace LiteEntitySystem
         /// <summary>
         /// Add new entity
         /// </summary>
-        /// <param name="initMethod">Method that will be called after entity construction</param>
+        /// <param name="initMethod">Method that will be called before entity OnConstructed</param>
         /// <typeparam name="T">Entity type</typeparam>
         /// <returns>Created entity or null in case of limit</returns>
         public T AddEntity<T>(Action<T> initMethod = null) where T : EntityLogic => 
@@ -330,7 +335,7 @@ namespace LiteEntitySystem
         /// Add new entity and set parent entity
         /// </summary>
         /// <param name="parent">Parent entity</param>
-        /// <param name="initMethod">Method that will be called after entity construction</param>
+        /// <param name="initMethod">Method that will be called before entity OnConstructed</param>
         /// <typeparam name="T">Entity type</typeparam>
         /// <returns>Created entity or null in case of limit</returns>
         public T AddEntity<T>(EntityLogic parent, Action<T> initMethod = null) where T : EntityLogic =>
@@ -356,7 +361,7 @@ namespace LiteEntitySystem
         /// <param name="inData">incoming data with header</param>
         public unsafe DeserializeResult Deserialize(NetPlayer player, ReadOnlySpan<byte> inData)
         {
-            if (inData[0] != HeaderByte)
+            if (inData.Length == 0 || inData[0] != HeaderByte)
                 return DeserializeResult.HeaderCheckFailed;
             inData = inData.Slice(1);
             
@@ -395,8 +400,11 @@ namespace LiteEntitySystem
                 humanControllerLogic.DeltaDecodeInit();
             }
             
+            if (player.State == NetPlayerState.WaitingForFirstInput)
+                player.AvailableInput.Clear();
+            
             ushort clientTick = BitConverter.ToUInt16(inData);
-            inData = inData.Slice(2);
+            inData = inData.Slice(sizeof(ushort));
             while (inData.Length >= InputPacketHeader.Size)
             {
                 var inputInfo = new InputInfo{ Tick = clientTick };
@@ -429,7 +437,10 @@ namespace LiteEntitySystem
                 }
                 inputInfo.Header.LerpMsec = Math.Clamp(inputInfo.Header.LerpMsec, 0f, 1f);
                 if (Utils.SequenceDiff(inputInfo.Header.StateB, player.CurrentServerTick) > 0)
+                {
                     player.CurrentServerTick = inputInfo.Header.StateB;
+                    player.ServerTickChangedTime = DateTime.UtcNow;
+                }
                 //Logger.Log($"ReadInput: {clientTick} stateA: {inputInfo.Header.StateA}");
                 clientTick++;
                 
@@ -485,17 +496,21 @@ namespace LiteEntitySystem
             stateSerializer.Init(entity, _tick);
             
             //create new rpc
-            stateSerializer.MakeNewRPC();
+            var newRPCPacket = stateSerializer.MakeNewRPC();
             
             //init and construct
             initMethod?.Invoke(entity);
+            
+            //refresh with data set after init method
+            stateSerializer.RefreshNewRPC(newRPCPacket);
+            
             ConstructEntity(entity);
             
             //create OnConstructed rpc
             stateSerializer.MakeConstructedRPC(null);
             
             _changedEntities.Add(entity);
-            _maxDataSize += stateSerializer.GetMaximumSize();
+            _maxDataSize += stateSerializer.MaximumSize;
             
             //Debug.Log($"[SEM] Entity create. clsId: {classData.ClassId}, id: {entityId}, v: {version}");
             return entity;
@@ -533,6 +548,8 @@ namespace LiteEntitySystem
             _minimalTick = _tick;
             bool resizeCompressionBuffer = false;
             int playersCount = _netPlayers.Count;
+            
+            //apply pending incoming inputs
             for (int pidx = 0; pidx < playersCount; pidx++)
             {
                 var player = _netPlayers.GetByIndex(pidx);
@@ -565,6 +582,7 @@ namespace LiteEntitySystem
                 }
             }
 
+            //update entities
             if (SafeEntityUpdate)
             {
                 foreach (var aliveEntity in AliveEntities)
@@ -579,11 +597,12 @@ namespace LiteEntitySystem
             }
             
             ExecuteLateConstruct();
+            ExecuteLocalSingletonsLateUpdate();
 
             //refresh construct rpc with latest updates to entity at creation tick
             foreach (var rpcNode in _pendingRPCs)
             {
-                if (rpcNode.Header.Id == RemoteCallPacket.ConstructRPCId && rpcNode.Header.Tick == _tick)
+                if (rpcNode.Header.Id == (ushort)InternalRPCType.Construct && rpcNode.Header.Tick == _tick)
                     _stateSerializers[rpcNode.Header.EntityId].RefreshConstructedRPC(rpcNode);
             }
             
@@ -595,6 +614,8 @@ namespace LiteEntitySystem
             //==================================================================
             if (playersCount == 0 || _tick % (int) SendRate != 0)
                 return;
+
+            var currentTimeUtc = DateTime.UtcNow;
             
             //remove old rpcs
             while (_pendingRPCs.TryPeek(out var rpcNode) && Utils.SequenceDiff(rpcNode.Header.Tick, _minimalTick) < 0)
@@ -623,6 +644,8 @@ namespace LiteEntitySystem
                 _syncForPlayer = null;
                 int rpcSize = 0;
                 RPCHeader prevRpcHeader = new();
+                
+                //if player need baseline state - send it reliably
                 if (player.State == NetPlayerState.RequestBaseline)
                 {
                     int originalLength = 0;
@@ -635,7 +658,8 @@ namespace LiteEntitySystem
                         {
                             if (_stateSerializers[e.Id].ShouldSync(player.Id, false))
                             {
-                                _stateSerializers[e.Id].MakeNewRPC();
+                                var newRPC = _stateSerializers[e.Id].MakeNewRPC();
+                                _stateSerializers[e.Id].RefreshNewRPC(newRPC);
                                 _stateSerializers[e.Id].MakeConstructedRPC(player);
                             }
                         }
@@ -654,7 +678,7 @@ namespace LiteEntitySystem
                     else //like baseline but only queued rpcs and diff data
                     {
                         foreach (var rpcNode in _pendingRPCs)
-                            if(ShouldSendRPC(rpcNode, player))
+                            if(ShouldSendRPC(rpcNode, player, true))
                                 rpcNode.WriteTo(packetBuffer, ref originalLength, ref prevRpcHeader);
                         rpcSize = originalLength;
                         
@@ -688,12 +712,22 @@ namespace LiteEntitySystem
                     player.StateBTick = _tick;
                     player.CurrentServerTick = _tick;
                     player.State = NetPlayerState.WaitingForFirstInput;
+                    player.ServerTickChangedTime = DateTime.UtcNow;
                     Logger.Log($"[SEM] SendWorld to player {player.Id}. orig: {originalLength} b, compressed: {encodedLength} b, ExecutedTick: {_tick}");
                     continue;
                 }
+                
                 if (player.State != NetPlayerState.Active)
                 {
                     //waiting to load initial state
+                    continue;
+                }
+                
+                //check if player cannot receive partial state due to high packet loss and large state size
+                if ((currentTimeUtc - player.ServerTickChangedTime).TotalSeconds > PlayerResyncTimeout)
+                {
+                    Logger.Log($"P:{player.Id} Request baseline {_tick} because timeout");
+                    player.State = NetPlayerState.RequestBaseline;
                     continue;
                 }
                 
@@ -708,7 +742,7 @@ namespace LiteEntitySystem
                 
                 foreach (var rpcNode in _pendingRPCs)
                 {
-                    if(!ShouldSendRPC(rpcNode, player))
+                    if(!ShouldSendRPC(rpcNode, player, false))
                         continue;
                     
                     //use another approach to sum size because writePosition can be edited by CheckOverflow
@@ -746,7 +780,7 @@ namespace LiteEntitySystem
                                 //Logger.Log($"Removed highest order entity: {e.UpdateOrderNum}, new highest: {_nextOrderNum}");
                             }
                             _entityIdQueue.ReuseId(entity.Id);
-                            _maxDataSize -= stateSerializer.GetMaximumSize();
+                            _maxDataSize -= stateSerializer.MaximumSize;
                             stateSerializer.Free();
                             //Logger.Log($"[SRV] RemoveEntity: {e.Id}");
                             RemoveEntity(entity);
@@ -796,7 +830,7 @@ namespace LiteEntitySystem
                 {
                     if (header->Part == MaxParts-1)
                     {
-                        Logger.Log($"P:{player.Id} Request baseline {_tick}");
+                        Logger.Log($"P:{player.Id} Request baseline {_tick} because state size");
                         player.State = NetPlayerState.RequestBaseline;
                         break;
                     }
@@ -812,7 +846,7 @@ namespace LiteEntitySystem
                 }
             }
             
-            bool ShouldSendRPC(RemoteCallPacket rpcNode, NetPlayer player)
+            bool ShouldSendRPC(RemoteCallPacket rpcNode, NetPlayer player, bool isBaseline)
             {
                 //SyncForPlayer calls?
                 if (rpcNode.OnlyForPlayer != null && rpcNode.OnlyForPlayer != player)
@@ -851,15 +885,18 @@ namespace LiteEntitySystem
                     }
                 }
 
-                switch (rpcNode.Header.Id)
+                switch ((InternalRPCType)rpcNode.Header.Id)
                 {
-                    case RemoteCallPacket.NewOwnedRPCId when entity.InternalOwnerId.Value != player.Id:
-                        rpcNode.Header.Id = RemoteCallPacket.NewRPCId;
+                    case InternalRPCType.NewOwned when entity.InternalOwnerId.Value != player.Id || isBaseline:
+                        rpcNode.Header.Id = (ushort)InternalRPCType.New;
                         break;
-                    case RemoteCallPacket.NewRPCId when entity.InternalOwnerId.Value == player.Id:
-                        rpcNode.Header.Id = RemoteCallPacket.NewOwnedRPCId;
+                    
+                    //do this change only for diff states for best local->remote entity swap
+                    case InternalRPCType.New when entity.InternalOwnerId.Value == player.Id && !isBaseline:
+                        rpcNode.Header.Id = (ushort)InternalRPCType.NewOwned;
                         break;
-                    case RemoteCallPacket.ConstructRPCId:
+                    
+                    case InternalRPCType.Construct:
                         stateSerializer.RefreshSyncGroupsVariable(player, new Span<byte>(rpcNode.Data));
                         break;
                 }
@@ -885,7 +922,7 @@ namespace LiteEntitySystem
             if (!skipOnSync && (fieldInfo.OnSyncFlags & BindOnChangeFlags.ExecuteOnServer) != 0)
             {
                 T value = oldValue;
-                entity.ClassData.CallOnSync(entity, ref fieldInfo, new ReadOnlySpan<byte>(&value, fieldInfo.IntSize));
+                fieldInfo.OnSync(fieldInfo.GetTargetObject(entity), new ReadOnlySpan<byte>(&value, fieldInfo.IntSize));
             }
         }
 
@@ -895,34 +932,41 @@ namespace LiteEntitySystem
             _stateSerializers[entity.Id].MarkFieldsChanged(_minimalTick, _tick, onlyWithFlags);
         }
         
-        internal void AddRemoteCall(InternalEntity entity, ushort rpcId, ExecuteFlags flags)
+        internal RemoteCallPacket AddRemoteCall(InternalEntity entity, ushort rpcId, ExecuteFlags flags)
         {
             if (PlayersCount == 0 || 
                 entity.IsRemoved || 
                 entity is AiControllerLogic ||
                 (flags & ExecuteFlags.SendToAll) == 0)
-                return;
+                return null;
             
             var rpc = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
             rpc.Init(_syncForPlayer, entity, _tick, 0, rpcId, flags);
             _pendingRPCs.Enqueue(rpc);
             _maxDataSize += rpc.TotalSize;
+            return rpc;
+        }
+
+        internal void NotifyRPCResized(int prevTotalSize, int newTotalSize)
+        {
+            _maxDataSize -= prevTotalSize;
+            _maxDataSize += newTotalSize;
         }
         
-        internal unsafe void AddRemoteCall<T>(InternalEntity entity, ReadOnlySpan<T> value, ushort rpcId, ExecuteFlags flags) where T : unmanaged
+        internal unsafe RemoteCallPacket AddRemoteCall<T>(InternalEntity entity, ReadOnlySpan<T> value, ushort rpcId, ExecuteFlags flags) where T : unmanaged
         {
             if (PlayersCount == 0 ||
                 entity.IsRemoved || 
                 entity is AiControllerLogic ||
                 (flags & ExecuteFlags.SendToAll) == 0)
-                return;
+                return null;
             
             var rpc = _rpcPool.Count > 0 ? _rpcPool.Dequeue() : new RemoteCallPacket();
             int dataSize = sizeof(T) * value.Length;
             if (dataSize > ushort.MaxValue)
             {
                 Logger.LogError($"DataSize on rpc: {rpcId}, entity: {entity} is more than {ushort.MaxValue}");
-                return;
+                return null;
             }
             
             rpc.Init(_syncForPlayer, entity, _tick, (ushort)dataSize, rpcId, flags);
@@ -931,6 +975,7 @@ namespace LiteEntitySystem
                     RefMagic.CopyBlock(rawData, rawValue, (uint)dataSize);
             _pendingRPCs.Enqueue(rpc);
             _maxDataSize += rpc.TotalSize;
+            return rpc;
         }
     }
 }

@@ -11,9 +11,9 @@ using Random = UnityEngine.Random;
 
 namespace Code.Server
 {
-    public class ServerLogic : MonoBehaviour, INetEventListener
+    public class ServerLogic : MonoBehaviour, ILiteNetEventListener
     {
-        private NetManager _netManager;
+        private LiteNetManager _netManager;
         private NetPacketProcessor _packetProcessor;
         public ushort Tick => _serverEntityManager.Tick;
         private ServerEntityManager _serverEntityManager;
@@ -27,7 +27,7 @@ namespace Code.Server
         private void Awake()
         {
             EntityManager.RegisterFieldType<Vector2>(Vector2.Lerp);
-            _netManager = new NetManager(this)
+            _netManager = new LiteNetManager(this)
             {
                 AutoRecycle = true,
                 PacketPoolSize = 1000,
@@ -43,7 +43,7 @@ namespace Code.Server
 #endif
 
             _packetProcessor = new NetPacketProcessor();
-            _packetProcessor.SubscribeReusable<JoinPacket, NetPeer>(OnJoinReceived);
+            _packetProcessor.SubscribeReusable<JoinPacket, LiteNetPeer>(OnJoinReceived);
 
             var typesMap = new EntityTypesMap<GameEntities>()
                 .Register(GameEntities.Player, e => new BasePlayer(e))
@@ -89,7 +89,7 @@ namespace Code.Server
             _serverEntityManager?.Update();
         }
 
-        private void OnJoinReceived(JoinPacket joinPacket, NetPeer peer)
+        private void OnJoinReceived(JoinPacket joinPacket, LiteNetPeer peer)
         {
             Debug.Log("[S] Join packet received: " + joinPacket.UserName);
 
@@ -109,12 +109,12 @@ namespace Code.Server
             _serverEntityManager.AddController<BasePlayerController>(serverPlayer, player);
         }
 
-        void INetEventListener.OnPeerConnected(NetPeer peer)
+        void ILiteNetEventListener.OnPeerConnected(LiteNetPeer peer)
         {
             Debug.Log("[S] Player connected: " + peer);
         }
 
-        void INetEventListener.OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+        void ILiteNetEventListener.OnPeerDisconnected(LiteNetPeer peer, DisconnectInfo disconnectInfo)
         {
             Debug.Log("[S] Player disconnected: " + disconnectInfo.Reason);
 
@@ -124,12 +124,12 @@ namespace Code.Server
             }
         }
 
-        void INetEventListener.OnNetworkError(IPEndPoint endPoint, SocketError socketError)
+        void ILiteNetEventListener.OnNetworkError(IPEndPoint endPoint, SocketError socketError)
         {
             Debug.Log("[S] NetworkError: " + socketError);
         }
 
-        void INetEventListener.OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
+        void ILiteNetEventListener.OnNetworkReceive(LiteNetPeer peer, NetPacketReader reader, DeliveryMethod deliveryMethod)
         {
             byte packetType = reader.PeekByte();
             switch ((PacketType)packetType)
@@ -149,18 +149,18 @@ namespace Code.Server
             }
         }
 
-        void INetEventListener.OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader,
+        void ILiteNetEventListener.OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader,
             UnconnectedMessageType messageType)
         {
 
         }
 
-        void INetEventListener.OnNetworkLatencyUpdate(NetPeer peer, int latency)
+        void ILiteNetEventListener.OnNetworkLatencyUpdate(LiteNetPeer peer, int latency)
         {
             
         }
 
-        void INetEventListener.OnConnectionRequest(ConnectionRequest request)
+        void ILiteNetEventListener.OnConnectionRequest(ConnectionRequest request)
         {
             request.AcceptIfKey("ExampleGame");
         }

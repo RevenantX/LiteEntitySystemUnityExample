@@ -12,7 +12,7 @@ using Random = UnityEngine.Random;
 
 namespace Code.Client
 {
-    public class ClientLogic : MonoBehaviour, INetEventListener
+    public class ClientLogic : MonoBehaviour, ILiteNetEventListener
     {
         [SerializeField] private ClientPlayerView _clientPlayerViewPrefab;
         [SerializeField] private RemotePlayerView _remotePlayerViewPrefab;
@@ -24,12 +24,12 @@ namespace Code.Client
         private GamePool<ShootEffect> _shootsPool;
         private GamePool<HitEffect> _hitsPool;
 
-        private NetManager _netManager;
+        private LiteNetManager _netManager;
         private NetDataWriter _writer;
         private NetPacketProcessor _packetProcessor;
         
         private string _userName;
-        private NetPeer _server;
+        private LiteNetPeer _server;
         private ClientEntityManager _entityManager;
         private int _ping;
 
@@ -81,7 +81,7 @@ namespace Code.Client
             _shootsPool = new GamePool<ShootEffect>(ShootEffectConstructor, 200);
             _hitsPool = new GamePool<HitEffect>(HitEffectConstructor, 200);
             _packetProcessor = new NetPacketProcessor();
-            _netManager = new NetManager(this)
+            _netManager = new LiteNetManager(this)
             {
                 AutoRecycle = true,
                 EnableStatistics = true,
@@ -158,7 +158,7 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
             _server.Send(_writer, deliveryMethod);
         }
 
-        void INetEventListener.OnPeerConnected(NetPeer peer)
+        void ILiteNetEventListener.OnPeerConnected(LiteNetPeer peer)
         {
             Debug.Log("[C] Connected to server: " + peer);
             _server = peer;
@@ -192,7 +192,7 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
             }, true);
         }
 
-        void INetEventListener.OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+        void ILiteNetEventListener.OnPeerDisconnected(LiteNetPeer peer, DisconnectInfo disconnectInfo)
         {
             _server = null;
             _entityManager = null;
@@ -204,12 +204,12 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
             }
         }
 
-        void INetEventListener.OnNetworkError(IPEndPoint endPoint, SocketError socketError)
+        void ILiteNetEventListener.OnNetworkError(IPEndPoint endPoint, SocketError socketError)
         {
             Debug.Log("[C] NetworkError: " + socketError);
         }
 
-        void INetEventListener.OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod deliveryMethod)
+        void ILiteNetEventListener.OnNetworkReceive(LiteNetPeer peer, NetPacketReader reader, DeliveryMethod deliveryMethod)
         {
             byte packetType = reader.PeekByte();
             var pt = (PacketType) packetType;
@@ -230,18 +230,18 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
             }
         }
 
-        void INetEventListener.OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader,
+        void ILiteNetEventListener.OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader,
             UnconnectedMessageType messageType)
         {
 
         }
 
-        void INetEventListener.OnNetworkLatencyUpdate(NetPeer peer, int latency)
+        void ILiteNetEventListener.OnNetworkLatencyUpdate(LiteNetPeer peer, int latency)
         {
             _ping = latency;
         }
 
-        void INetEventListener.OnConnectionRequest(ConnectionRequest request)
+        void ILiteNetEventListener.OnConnectionRequest(ConnectionRequest request)
         {
             request.Reject();
         }

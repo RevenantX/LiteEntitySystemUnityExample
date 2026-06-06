@@ -15,7 +15,7 @@ namespace LiteEntitySystem.Internal
 
         internal abstract void InitSyncVar(InternalBaseClass obj, int offset, InternalEntity entity, ushort fieldId);
         internal abstract void SetFrom(InternalBaseClass obj, int offset, byte* data);
-        internal abstract bool SetFromAndSync(InternalBaseClass obj, int offset, byte* data);
+        internal abstract bool SetFromAndSync(InternalBaseClass obj, int offset, byte* data, bool copyPrevValueIntoData);
         internal abstract void SetFromAndSync(InternalBaseClass obj, int offset, byte* data, MethodCallDelegate onSyncDelegate);
         internal abstract void SetInterpValue(InternalBaseClass obj, int offset, byte* data);
         internal abstract void SetInterpValueFromCurrentValue(InternalBaseClass obj, int offset);
@@ -48,8 +48,18 @@ namespace LiteEntitySystem.Internal
         internal sealed override void SetFrom(InternalBaseClass obj, int offset, byte* data) =>
             RefMagic.SyncVarSetDirect<T, SyncVar<T>>(obj, offset, *(T*)data);
 
-        internal sealed override bool SetFromAndSync(InternalBaseClass obj, int offset, byte* data) =>
-            RefMagic.SyncVarSetFromAndSync<T, SyncVar<T>>(obj, offset, ref *(T*)data);
+        internal sealed override bool SetFromAndSync(InternalBaseClass obj, int offset, byte* data, bool copyPrevValueIntoData)
+        {
+            if(copyPrevValueIntoData)
+            {
+                return RefMagic.SyncVarSetFromAndSync<T, SyncVar<T>>(obj, offset, ref *(T*)data);
+            }
+            else
+            {
+                var tempData = *(T*)data;
+                return RefMagic.SyncVarSetFromAndSync<T, SyncVar<T>>(obj, offset, ref tempData);
+            }
+        }
 
         internal sealed override void SetFromAndSync(InternalBaseClass obj, int offset, byte* data, MethodCallDelegate onSyncDelegate)
         {

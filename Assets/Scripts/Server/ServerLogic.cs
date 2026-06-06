@@ -160,7 +160,7 @@ namespace Code.Server
             
         }
 
-        void ILiteNetEventListener.OnConnectionRequest(ConnectionRequest request)
+        void ILiteNetEventListener.OnConnectionRequest(LiteConnectionRequest request)
         {
             request.AcceptIfKey("ExampleGame");
         }

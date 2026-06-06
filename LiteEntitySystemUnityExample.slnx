@@ -1,0 +1,15 @@
+﻿<Solution>
+  <Project Path="Unity.Timeline.csproj" />
+  <Project Path="Unity.Timeline.Editor.csproj" />
+  <Project Path="LiteEntitySystem.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="Unity.VisualStudio.Editor.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="Unity.Rider.Editor.csproj" />
+  <Project Path="LiteNetLib.csproj" />
+  <Project Path="Unity.Toolchain.Linux-x86_64.csproj" />
+  <Project Path="Unity.Sysroot.Linux_x86_64.csproj" />
+  <Project Path="Unity.Toolchain.Macos-x86_64-Linux-x86_64.csproj" />
+  <Project Path="Unity.SysrootPackage.Editor.csproj" />
+  <Project Path="Unity.Toolchain.Win-x86_64-Linux-x86_64.csproj" />
+</Solution>

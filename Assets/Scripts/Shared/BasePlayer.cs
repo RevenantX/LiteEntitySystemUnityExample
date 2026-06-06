@@ -55,12 +55,16 @@ namespace Code.Shared
 
         protected override void OnConstructed()
         {
+            if(IsClient && IsLocalControlled)
+            {
+                Debug.Log("ConstrClient");
+            }
             _unityPhys = EntityManager.GetSingleton<UnityPhysicsManager>();
             UnityObject = new GameObject($"Player_{Name}_{Id}");
             UnityObject.transform.SetParent(_unityPhys.Root);
             _collider = UnityObject.AddComponent<BoxCollider2D>();
             _rigidbody = UnityObject.AddComponent<Rigidbody2D>();
-            _rigidbody.isKinematic = true;
+            _rigidbody.bodyType = RigidbodyType2D.Kinematic;
             _collider.isTrigger = true;
             _collider.size = Vector2.one * 0.66f;
             UnityObject.AddComponent<PlayerProxy>().AttachedPlayer = this;

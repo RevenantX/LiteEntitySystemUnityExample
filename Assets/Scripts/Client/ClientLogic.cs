@@ -241,7 +241,7 @@ PendingRemove: {_entityManager.PendingToRemoveEntites}";
             _ping = latency;
         }
 
-        void ILiteNetEventListener.OnConnectionRequest(ConnectionRequest request)
+        void ILiteNetEventListener.OnConnectionRequest(LiteConnectionRequest request)
         {
             request.Reject();
         }

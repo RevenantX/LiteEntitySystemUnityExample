@@ -15,6 +15,12 @@ namespace Code.Shared
             PhysicsScene = root.gameObject.scene.GetPhysicsScene2D();
             return this;
         }
+
+        protected override void OnConstructed()
+        {
+            base.OnConstructed();
+            Debug.Log($"OnPhysConstructed: {EntityManager.Mode}");
+        }
         
         public UnityPhysicsManager(EntityParams entityParams) : base(entityParams)
         {
